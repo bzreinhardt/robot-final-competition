@@ -66,24 +66,32 @@ noRobotCount = 0;
 % maxTime = 500;  % Max time to allow the program to run (s)
 maxV = 0.3;     % Max allowable forward velocity with no angular 
 wheel2center = 0.13;  
-
+radius = 0.1;
+slowV = 0.1;
 %TODO load covariance matrix
 % Load Map
                         
 % Initiallize loop variables
 tic
 start = 'start'
+i = 0;
+iMax = 20;
 
 while toc < maxTime
-    
+    i = i + 1;
     % READ & STORE SENSOR DATA
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    
+    %make sure that beacon datastore keeps up with everybody else
     % CONTROL FUNCTION (send robot commands)
+    if i == iMax %or confident of location TODO
+        SetFwdVelAngVelCreate(CreatePort, 0, 0);
+        break;
+    else
+        cmdV = slowV;
+        cmdW = slowV/radius;
+    end
     
-
-    
-    % move forward if not bumped 
+    % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it
     if noRobotCount >= 3
