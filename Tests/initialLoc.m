@@ -68,8 +68,9 @@ noRobotCount = 0;
 % maxTime = 500;  % Max time to allow the program to run (s)
 maxV = 0.3;     % Max allowable forward velocity with no angular 
 wheel2center = 0.13;  
-radius = 0.15;
-slowV = 0.1;
+sonarR = 0.16;
+cameraR = 0;
+slowV = 0;
 %TODO load covariance matrix
 load('ExampleMap1_2014.mat');
                         
@@ -86,21 +87,22 @@ while toc < maxTime
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
-    %if bump
-    %do bump procedure
+    
     %put data in comparable form
     [measurements, sonars, ARs ] = conditionSensors(sonar, beacon);
-    %TEST - calculate expected measurements
+    %predict measurement
     predictMeas = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
-        map,beaconLoc,radius);
+        map,beaconLoc,cameraR,sonarR);
+    
     %store stuff
    
     if isempty(ARs)
         ARs = 0;
     end
-    ARs = padarray(ARs,[0 1-size(ARs,2)],'post');
+    ARs = padarray(ARs,[0 2-size(ARs,2)],'post');
     dataStore.ARs = [dataStore.ARs;ARs];
-    datastore.sonars = [dataStore.sonars;sonars];
+    sonars = padarray(sonars, [0 3-size(sonars,2)],'post');
+    dataStore.sonars = [dataStore.sonars;sonars];
     %TODO pad measurements with zeros so you can store it.
     measurements = padarray(measurements, [0 7-size(measurements,2)],'post');
     dataStore.measurements = [dataStore.measurements;measurements];
@@ -114,7 +116,7 @@ while toc < maxTime
         break;
     else
         cmdV = slowV;
-        cmdW = slowV/radius;
+        cmdW = slowV/wheel2center;
     end
     
     % move forward if not bumped
@@ -128,6 +130,7 @@ while toc < maxTime
     end
     
     pause(0.1);
+    SetFwdVelAngVelCreate(CreatePort, 0, 0);
 end
 
 % set forward and angular velocity to zero (stop robot) before exiting the function

@@ -1,4 +1,4 @@
-function [exp] = hBeaconSonar(pose,beaconNums,sonars,map,beaconLoc,robotRad)
+function [exp] = hBeaconSonar(pose,beaconNums,sonars,map,beaconLoc,cameraRad,sonarRad)
 %%
 %hBeacon finds the expected beacon data for a series of robot poses based
 %on a list of beacons
@@ -25,13 +25,15 @@ if size(pose,1) ~= 3
     pose = pose';
 end
 
-for j = 1:size(sonars)
+for j = 1:length(sonars)
 ang = (pi/2*sonars(j)-pi); 
-expSonar = hSonar(pose, map, robotRad, ang,maxRange);
+expSonar = hSonar(pose, map, sonarRad, ang,maxRange);
 exp = [exp,expSonar];
 end
-for i = 1:size(beaconNums)
-expBeacon = hBeacon(pose,beaconNums(i),beaconLoc,robotRad);
+for i = 1:length(beaconNums)
+    %hBeacon gives [cameraZ; cameraX] which is [beaconX,beaconY] in robot
+    %coords
+expBeacon = hBeacon(pose,beaconNums(i),beaconLoc,cameraRad); %hBeacon gives
 exp = [exp,expBeacon'];
 end
 

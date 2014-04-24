@@ -27,8 +27,9 @@ end
 %find useful beacon measurements - put them in form of X,Y in robot
 %coordinates
 for j = 1:size(cameraData,1)
-    measurements = [measurements,cameraData(j,5),cameraData(j,3)];
+    measurements = [measurements,cameraData(j,4),cameraData(j,2)];
     ARs = [ARs, cameraData(j,1)]; 
 end
 end
 
+ 

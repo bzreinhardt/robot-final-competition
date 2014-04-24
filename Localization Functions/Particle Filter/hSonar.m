@@ -32,7 +32,7 @@ G_Q_R = [cos(robotPose(3)), -sin(robotPose(3)); ...
 
 inf = maxRange + 1; %make sure our infinte vector goes past the max range
 %do we assume the sonar detectors are on the outer edge of the robot?
-range = NaN*ones(length(angles),1); %initialize range matrix
+range = zeros(length(angles),1); %initialize range matrix
 for i = 1:length(angles)
     %cycle through the sensors
     %assume sensor is mounted at angle on radius of robot
@@ -47,7 +47,7 @@ for i = 1:length(angles)
         map(k,1),map(k,2),map(k,3),map(k,4));
      if isect %if there's an intersection w/ wall calculate distance to wall
          dist = ((x-pos_s_G(1)).^2+(y-pos_s_G(2)).^2).^.5;
-         if isnan(range(i)) || dist < range(i) 
+         if range(i)==0 || dist < range(i) 
              %if the distance to the wall is the shortest distance, set it
              %as the expected range measurement for that sensor
             range(i) = dist;
