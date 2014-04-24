@@ -1,5 +1,5 @@
-function[range] = sonarPredict(robotPose,map,robotRad,angles,maxRange)
-% SONARPREDICT: predict the sonar range measurements for a robot operating
+function[range] = hSonar(robotPose,map,robotRad,angles,maxRange)
+% HSONAR: predict the sonar range measurements for a robot operating
 % in a known map.
 % 
 %   RANGE = SONARPREDICT(ROBOTPOSE,MAP,ROBOTRAD,ANGLES,MAXRANGE) returns 

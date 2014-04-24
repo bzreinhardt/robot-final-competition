@@ -1,4 +1,4 @@
-function [w] = pfWeightSonarAR(X,z,h,Q)
+function [w] = pfWeight(X,nhz_sonar,h_sonar,z_AR,h_AR,Q_sonar,Q_AR)
 % : Find the weight of a state particle by comparing the sensor
 % measurements expected from that particle with actual measurements
 % 
@@ -25,12 +25,12 @@ function [w] = pfWeightSonarAR(X,z,h,Q)
 %   Homework #4
 %   REINHARDT, BENJAMIN
 goodMeas =[];Q_good = [];
-expectMeas = feval(h,X);
+expectMeas = feval(h_sonar,X);
 
-for i = 1:length(z)
+for i = 1:length(z_sonar)
     if ~isnan(z(i)) && ~isnan(expectMeas(i))
         goodMeas = [goodMeas, i];
-        Q_good = [Q_good Q(i,i)];
+        Q_good = [Q_good Q_sonar(i,i)];
     end
 end
 Q_good = diag(Q_good);
