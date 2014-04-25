@@ -1,4 +1,4 @@
-function [X_mean,X_best,confident] = localize(X_in,w_in)
+function [X_mean,X_best,confident,variance] = localize(X_in,w_in)
 %localize from a particle set
 %
 %   INPUTS
@@ -16,7 +16,7 @@ function [X_mean,X_best,confident] = localize(X_in,w_in)
 
 %constant that controls how much larger you need the best particle to be in
 %order to be confident
-margin = 5;
+margin = 0.05;
 
 X_mean = mean(X_in,2);
 [biggestW, biggestI] = max(w_in);
@@ -25,7 +25,9 @@ X_best = X_in(:,biggestI);
 w = w_in;
 w(biggestI) = -1;
 [secondBiggestW, secondI] = max(w);
-if biggestW > margin*secondBiggestW
+variance = var((X_in - X_mean*ones(1,size(X_in,2)))');
+meanVar = mean(variance);
+if meanVar < margin
 confident = 1;
 else
     confident = 0;

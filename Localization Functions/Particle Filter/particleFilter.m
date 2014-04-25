@@ -28,20 +28,20 @@ function [X_out,w_out] = particleFilter(X_in,z,u,p_u,p_z,R)
 %   Reinhardt, Benjamin
 
 %prediction step
-M = length(X_in(1,:)); %number of particles
+M = size(X_in,2); %number of particles
 
 for m=1:M
-    X_pred(:,m) = feval(p_u,X_in(:,m),u) ; %propigate each particle by updating according to the
+    X_pred(:,m) = feval(p_u,X_in(:,m),u) + R*randn(size(X_in,1),1); %propigate each particle by updating according to the
     %dynamics and adding process noise
     w(m) = feval(p_z,X_pred(:,m),z); %find the weight of each propigated particle
     %if all the sensors can't be compared, give all the particles equal
     %weight
-    if max(w) == 0 
+    
+end
+if max(w) == 0 
         w = ones(1,length(w))/length(w);
     end
-end
-w = w/max(w);
-%update step
+% %Resample step
 try
 y = randsample(M,M,true,w); %pick new particles based on the weights
 catch err
@@ -50,10 +50,10 @@ catch err
     print('w threw an error');
 end
 for m = 1:M
-    X_out(:,m) = X_pred(:,y(m))+ R*randn(size(X_in,1),1);
+    X_out(:,m) = X_pred(:,y(m));
     w_out(m) = feval(p_z,X_out(:,m),z); %find the weight of each resampled particle
 end
-
+% 
 
 
 end

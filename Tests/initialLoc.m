@@ -55,7 +55,7 @@ dataStore = struct('truthPose', [],...
                    'bump', [], ...
                    'beacon', [],...
                    'ARs',[], 'sonars',[],'measurements',[],...
-                   'predictMeas',[]);
+                   'predictMeas',[],'particles',[],'pfvar',[]);
 
 
 % Variable used to keep track of whether the overhead localization "lost"
@@ -64,26 +64,52 @@ dataStore = struct('truthPose', [],...
 % safety reasons.
 noRobotCount = 0;
 
-%set up constraints
+%% set up constraints
 % maxTime = 500;  % Max time to allow the program to run (s)
 maxV = 0.3;     % Max allowable forward velocity with no angular 
 wheel2center = 0.13;  
 sonarR = 0.16;
 cameraR = 0;
-slowV = 0;
+slowV = 0.05;
 %TODO load covariance matrix
 load('ExampleMap1_2014.mat');
+%% INITIALIZE PARTICLE FILTER
+angles = [0:pi/20:2*pi-pi/20];
+X_0 = initializePF(waypoints,angles);
+cameraR = 0;
+sonarR = 0.16;
+Q_sonar = 0.01;
+cov_AR = 0.005;
+R = [0.2 0 0; 0 0.2 0; 0 0 0.2];
+theta = 0.1;
+%rotM = [cos(theta) -sin(theta);sin(theta) cos(theta)];
+Q_AR = cov_AR*eye(2);
+%function to predict measurement based on map
+
+%function to predict position based on odometry data
+g = @integrateOdom;
+h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
+%weighting function
+
                         
-% Initiallize loop variables
+%% Initiallize loop variables
 tic
 start = 'start'
 i = 0;
-iMax = 20;
+iMax = 40;
 beaconSize = 0;
 
+%% Main loop
 while toc < maxTime
     i = i + 1;
-    % READ & STORE SENSOR DATA
+    if i == 1
+        X_in = X_0;
+    else
+        X_in = X_out;
+        delete(handle1);
+%        delete(handle2);
+    end
+    %% READ & STORE SENSOR DATA
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
@@ -93,8 +119,23 @@ while toc < maxTime
     %predict measurement
     predictMeas = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
         map,beaconLoc,cameraR,sonarR);
+    %% RUN PARTICLE FILTER
+    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR);
+    [X_out,w_out] =  particleFilter(X_in,measurements,dataStore.odometry(end,2:3)',g,p_z,R);
+    [X_mean,X_best,confident,pfvar] = localize(X_out,w_out);
+    %% Draw stuff
+    if confident == 1
+        col = 'g';
+    else
+        col = 'r';
+    end
+    handle1 = quiver(X_mean(1),X_mean(2),0.5*cos(X_mean(3)),0.5*sin(X_mean(3)));
+    set(handle1,'color',col);
+    %handle2 = plot(X_out(1,:),X_out(2,:),'go');
+    drawnow;
     
-    %store stuff
+    
+    %% store stuff
    
     if isempty(ARs)
         ARs = 0;
@@ -110,9 +151,17 @@ while toc < maxTime
     dataStore.predictMeas = [dataStore.predictMeas; predictMeas];
     %make sure that beacon datastore keeps up with everybody else
     beaconSize = size(dataStore.beacon,1);
-    % CONTROL FUNCTION (send robot commands)
+    %
+    dataStore.particles = [dataStore.particles; X_out;w_out];
+    dataStore.pfvar = [dataStore.pfvar;pfvar];
+    
+    
+    
+    %% CONTROL FUNCTION (send robot commands)
     if i == iMax %or confident of location TODO
         SetFwdVelAngVelCreate(CreatePort, 0, 0);
+        delete(handle1);
+ %       delete(handle2);
         break;
     else
         cmdV = slowV;
