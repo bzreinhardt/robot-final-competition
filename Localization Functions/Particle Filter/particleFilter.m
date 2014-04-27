@@ -41,7 +41,7 @@ for m=1:M
     %weight
     
 end
-w = w/norm(w);
+w = w/sum(w);
 if max(w) == 0 
         w = ones(1,length(w))/length(w);
 end
@@ -51,7 +51,7 @@ end
     for m = 1:M
     w_out(m) = feval(p_z,X_out(:,m),z); %find the weight of each resampled particle
     end
-    w_out = w_out/norm(w_out);
+    w_out = w_out/sum(w_out);
     %pick new particles based on the weights
 % catch err
 %     global w_err

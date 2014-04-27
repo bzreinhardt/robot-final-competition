@@ -1,5 +1,6 @@
-function[dataStore] = initialLoc(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
-% initialLoc: localize robot to initial waypoint on map. 
+function[dataStore] = checkWayPts(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+% checkWayPts - test that the robot successfully notices when it hits
+% waypts
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
 % the other points. Set that as the robot's position.
@@ -71,7 +72,7 @@ maxV = 0.3;     % Max allowable forward velocity with no angular
 wheel2center = 0.13;  
 sonarR = 0.16;
 cameraR = 0;
-slowV = 0.05;
+slowV = 0.2;
 %TODO load covariance matrix
 load('ExampleMap2_2014.mat');
 %% INITIALIZE PARTICLE FILTER
@@ -80,63 +81,66 @@ mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
 angles = [0:pi/4:(2*pi-pi/4)];
 X_0 = initializePF(waypoints,angles);
 %number of particles
-M = size(X_0,2);
+M = 50;
 cameraR = 0;
 sonarR = 0.16;
 Q_sonar = 0.01;
 cov_AR = 0.005;
-R = [0.2 0 0; 0 0.2 0; 0 0 0.2];
+R = [0.1 0 0; 0 0.1 0; 0 0 0.1];
 theta = 0.1;
 %rotM = [cos(theta) -sin(theta);sin(theta) cos(theta)];
 Q_AR = cov_AR*eye(2);
-%function to predict measurement based on map
+
 
 %function to predict position based on odometry data
 g = @integrateOdom;
+%function to predict measurement based on map
 h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
 %noise functions
 normNoise = @()normStateNoise([3,M],R);
 %resampling functions
-%lowVarResample = @lowVarSample;
-resampleFcn = @noResample;
+resampleFcn = @lowVarSample;
+%resampleFcn = @noResample;
                         
 %% Initiallize loop variables
 tic
 start = 'start'
+% variable to keep track of 
 i = 0;
-iMaxLoc = 40;
+iMaxLoc = 20;
+%size of the dataStore.beacon structure for checking whether you can see a
+%beacon
 beaconSize = 0;
+%whether or not you've seen a beacon on this iteration
 beaconSeen = 0;
-distTurned = 0;
-%plot the map
-% figure(1);clf; 
-% wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints)
+% waypoints left to visit
+wayPtsUnvisited = [ waypoints;ECwaypoints];
+% waypoints already visited
+wayPtsVisited = [];
 
 
 %% Main loop
 while toc < maxTime
     i = i + 1;
+    
+    %% READ & STORE SENSOR DATA
+    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
+    %
+   
     if i == 1
-        X_in = X_0;
+        X_in = dataStore.truthPose(end,2:4)'*ones(1,M)+R*randn(3,M);
     else
         X_in = X_out;
         delete(parts);
         delete(guess);
     end
-    %% READ & STORE SENSOR DATA
-    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    %keep track of approximate distance turned 
-    distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
     beaconSize = beaconSize + length(beacon);
-    
-    
     %switch resampling function when you see a beacon for the first time
     if beaconSize > 0 && beaconSeen == 0
         resampleFcn = @lowVarSample;
-        beaconSeen = 1;
-        
+        beaconSeen = 1;    
     end
         
     %put data in comparable form
@@ -149,13 +153,12 @@ while toc < maxTime
     [X_out,w_out] =  particleFilter(X_in,measurements,dataStore.odometry(end,2:3)',...
         g,p_z,normNoise,resampleFcn);
     %prune the output
-    
+    %% ESTIMATE POSITION and CHECK for problems
     [X,locErr] = testConfidence(X_out,w_out,measurements,predictMeas,sonars,ARs);
-    
-    if locErr == 1
-        disp('AR is dumb');
-    end
-    
+    if locErr == 2
+        optWall = hOptWall(X,ARs,sonars,map,beaconLoc,cameraR,sonarR,optWalls,@hBeaconSonar,measurements,predictMeas)
+    end 
+    %% Check for 
     %% Draw stuff
     col = 'k';
     %figure(1);
@@ -203,7 +206,8 @@ while toc < maxTime
         break;
     else
         cmdV = slowV;
-        cmdW = slowV/wheel2center;
+        %cmdW = slowV/wheel2center;
+        cmdW = 0;
     end
     
     % move forward if not bumped
@@ -217,7 +221,7 @@ while toc < maxTime
     end
     
     pause(0.1);
-    SetFwdVelAngVelCreate(CreatePort, 0, 0);
+%    SetFwdVelAngVelCreate(CreatePort, 0, 0);
 end
 
 % set forward and angular velocity to zero (stop robot) before exiting the function
