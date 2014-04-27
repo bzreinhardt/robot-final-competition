@@ -1,4 +1,4 @@
-function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR)
+function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims)
 % : Find the weight of a state particle by comparing the sensor
 % measurements expected from that particle with actual measurements
 % 
@@ -14,7 +14,7 @@ function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR)
 %       z  - actual measurement 1xK or Kx1 where k is the number of sensors
 %       Q_sonar - Variance of a single sonar sensor
 %       Q_AR - covariance matrix for X/Y measurements of a AR tag
-%       
+%       %mapLims - corners of a square map [xmin,ymin,xmax,ymax}
 %       
 % 
 %   OUTPUTS
@@ -25,8 +25,10 @@ function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR)
 %   MAE 4180/5180 CS 3758: Autonomous Mobile Robots
 %   Homework #4
 %   REINHARDT, BENJAMIN
+%check if X is on the map - if it isn't, it gets 0 weight
+if X(1)<mapLims(1)||X(2)<mapLims(2)||X(1)>maplims(3)||
 Q_good = [];
-expectMeas = feval(h,X);
+expectMeas = feval(h,X,ARs,sonars);
 for i = 1:length(sonars)
     Q_good = blkdiag(Q_good,Q_sonar);
 end
@@ -44,7 +46,8 @@ if size(z,1) > 1
     z = z';
 end
 if size(z,2) ~= size(expectMeas,2)
-    
+    warning('uh oh');
+end
 
  w = mvnpdf(z,expectMeas,Q_good);
 

@@ -1,4 +1,4 @@
-function [X_out,w_out] = particleFilter(X_in,z,u,p_u,p_z,R)
+function [X_out,w_out] = particleFilter(X_in,z,u,p_u,p_z,stateNoise,resampler)
 %particleFilter : perform one complete PF prediction and update step
 %
 %   [X_OUT] = particleFilter(X_in,z, g,h, p_u,p_z) returns
@@ -29,30 +29,36 @@ function [X_out,w_out] = particleFilter(X_in,z,u,p_u,p_z,R)
 
 %prediction step
 M = size(X_in,2); %number of particles
-
+N = size(X_in,1); %size of state space
+X_pred = zeros(size(X_in));
+w = zeros(1,size(X_in,2));
+noise = feval(stateNoise);
 for m=1:M
-    X_pred(:,m) = feval(p_u,X_in(:,m),u) + R*randn(size(X_in,1),1); %propigate each particle by updating according to the
+    X_pred(:,m) = feval(p_u,X_in(:,m),u) +noise(:,m) ; %propigate each particle by updating according to the
     %dynamics and adding process noise
     w(m) = feval(p_z,X_pred(:,m),z); %find the weight of each propigated particle
     %if all the sensors can't be compared, give all the particles equal
     %weight
     
 end
+w = w/norm(w);
 if max(w) == 0 
         w = ones(1,length(w))/length(w);
-    end
+end
 % %Resample step
-try
-y = randsample(M,M,true,w); %pick new particles based on the weights
-catch err
-    global w_err
-    w_err = w;
-    print('w threw an error');
-end
-for m = 1:M
-    X_out(:,m) = X_pred(:,y(m));
+%try
+    X_out = feval(resampler,X_pred,w);
+    for m = 1:M
     w_out(m) = feval(p_z,X_out(:,m),z); %find the weight of each resampled particle
-end
+    end
+    w_out = w_out/norm(w_out);
+    %pick new particles based on the weights
+% catch err
+%     global w_err
+%     w_err = w;
+%     print('w threw an error');
+% end
+
 % 
 
 

@@ -55,7 +55,8 @@ dataStore = struct('truthPose', [],...
                    'bump', [], ...
                    'beacon', [],...
                    'ARs',[], 'sonars',[],'measurements',[],...
-                   'predictMeas',[],'particles',[],'pfvar',[]);
+                   'predictMeas',[],'particles',[],'pfvar',[],...
+                   'X',[]);
 
 
 % Variable used to keep track of whether the overhead localization "lost"
@@ -72,10 +73,14 @@ sonarR = 0.16;
 cameraR = 0;
 slowV = 0.05;
 %TODO load covariance matrix
-load('ExampleMap1_2014.mat');
+load('ExampleMap2_2014.mat');
 %% INITIALIZE PARTICLE FILTER
-angles = [0:pi/20:2*pi-pi/20];
+mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
+    max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
+angles = [0:pi/4:(2*pi-pi/4)];
 X_0 = initializePF(waypoints,angles);
+%number of particles
+M = size(X_0,2);
 cameraR = 0;
 sonarR = 0.16;
 Q_sonar = 0.01;
@@ -89,15 +94,23 @@ Q_AR = cov_AR*eye(2);
 %function to predict position based on odometry data
 g = @integrateOdom;
 h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
-%weighting function
-
+%noise functions
+normNoise = @()normStateNoise([3,M],R);
+%resampling functions
+%lowVarResample = @lowVarSample;
+resampleFcn = @noResample;
                         
 %% Initiallize loop variables
 tic
 start = 'start'
 i = 0;
-iMax = 40;
+iMaxLoc = 40;
 beaconSize = 0;
+beaconSeen = 0;
+%plot the map
+% figure(1);clf; 
+% wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints)
+
 
 %% Main loop
 while toc < maxTime
@@ -106,32 +119,49 @@ while toc < maxTime
         X_in = X_0;
     else
         X_in = X_out;
-        delete(handle1);
-%        delete(handle2);
+        delete(parts);
+        delete(guess);
     end
     %% READ & STORE SENSOR DATA
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
-    
+    beaconSize = beaconSize + length(beacon);
+    %switch resampling function when you see a beacon for the first time
+    if beaconSize > 0 && beaconSeen == 0
+        resampleFcn = @lowVarSample;
+        beaconSeen = 1;
+        
+    end
+        
     %put data in comparable form
     [measurements, sonars, ARs ] = conditionSensors(sonar, beacon);
     %predict measurement
     predictMeas = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
         map,beaconLoc,cameraR,sonarR);
     %% RUN PARTICLE FILTER
-    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR);
-    [X_out,w_out] =  particleFilter(X_in,measurements,dataStore.odometry(end,2:3)',g,p_z,R);
-    [X_mean,X_best,confident,pfvar] = localize(X_out,w_out);
-    %% Draw stuff
-    if confident == 1
-        col = 'g';
-    else
-        col = 'r';
+    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims);
+    [X_out,w_out] =  particleFilter(X_in,measurements,dataStore.odometry(end,2:3)',...
+        g,p_z,normNoise,resampleFcn);
+    %prune the output
+    
+    [X,locErr] = testConfidence(X_out,w_out,measurements,h,sonars,ARs);
+    
+    if locErr == 1
+        disp('AR is dumb');
     end
-    handle1 = quiver(X_mean(1),X_mean(2),0.5*cos(X_mean(3)),0.5*sin(X_mean(3)));
-    set(handle1,'color',col);
-    %handle2 = plot(X_out(1,:),X_out(2,:),'go');
+    
+    %% Draw stuff
+    col = 'k';
+    %figure(1);
+    %xlim([-5 5]);ylim([-5 5]);
+    %robot = circle(X_true(1:2),sonarR,10);
+    
+    guess = quiver(X(1),X(2),cos(X(3)),sin(X(3)));
+    parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
+    set(parts,'color',col);
+    set(guess,'color','r');
+    
     drawnow;
     
     
@@ -140,28 +170,31 @@ while toc < maxTime
     if isempty(ARs)
         ARs = 0;
     end
-    ARs = padarray(ARs,[0 2-size(ARs,2)],'post');
+    if size(ARs,2)>5
+        warning('what?')
+    end
+    ARs = padarray(ARs,[0 5-size(ARs,2)],'post');
     dataStore.ARs = [dataStore.ARs;ARs];
     sonars = padarray(sonars, [0 3-size(sonars,2)],'post');
     dataStore.sonars = [dataStore.sonars;sonars];
     %TODO pad measurements with zeros so you can store it.
-    measurements = padarray(measurements, [0 7-size(measurements,2)],'post');
+    measurements = padarray(measurements, [0 13-size(measurements,2)],'post');
     dataStore.measurements = [dataStore.measurements;measurements];
-    predictMeas = padarray(predictMeas, [0 7-size(predictMeas,2)],'post');
+    predictMeas = padarray(predictMeas, [0 13-size(predictMeas,2)],'post');
     dataStore.predictMeas = [dataStore.predictMeas; predictMeas];
     %make sure that beacon datastore keeps up with everybody else
     beaconSize = size(dataStore.beacon,1);
     %
     dataStore.particles = [dataStore.particles; X_out;w_out];
-    dataStore.pfvar = [dataStore.pfvar;pfvar];
-    
+%    dataStore.pfvar = [dataStore.pfvar;X_var];
+    dataStore.X = [dataStore.X;X'];
     
     
     %% CONTROL FUNCTION (send robot commands)
-    if i == iMax %or confident of location TODO
+    if i == iMaxLoc %or confident of location TODO
         SetFwdVelAngVelCreate(CreatePort, 0, 0);
-        delete(handle1);
- %       delete(handle2);
+        delete(parts);
+        delete(guess);
         break;
     else
         cmdV = slowV;
