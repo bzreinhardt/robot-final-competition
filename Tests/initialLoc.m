@@ -240,9 +240,7 @@ end
 
 % set forward and angular velocity to zero (stop robot) before exiting the function
 SetFwdVelAngVelCreate(CreatePort, 0,0 );
-%erase stuff on map at end of run
-delete(parts);
-delete(guess);
+
 
 end
 

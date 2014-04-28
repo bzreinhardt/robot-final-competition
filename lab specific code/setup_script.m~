@@ -1,0 +1,8 @@
+%this is a script to automate as much of the robot setup and calibration as
+%possible
+
+%a) get a robot
+%b) robot[ID].coecis.cornell.edu
+%c) get AR tag
+ARtag = input('enter robot AR ta
+ID = input('enter robot ID number: ');
