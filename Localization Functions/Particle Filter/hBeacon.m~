@@ -40,17 +40,16 @@ R_Q_G = [cos(pose(3)) sin(pose(3));  -sin(pose(3)) cos(pose(3))];
 C_beacons = R_Q_G*(beacon(:,2:3)'-pose(1:2))-[robotRad;0];
 exp = C_beacons;
 %camera position in the global frame
-camera = pose(1:2)+R_Q_G'*[robotRad;0];
+camera = R_Q_G'*[robotRad;0];
 %check whether there is a wall on the direct line between the beacon and
 %the camera - if there is, set the expected measurement to a rediculous
 %number
 for i = 1:size(map,1)
-    for j = 1:size(beacon,1)
-        [isect,x,y,ua]= intersectPoint(camera(1),camera(2),...
-            beacon(j,2),beacon(j,3),...
-            map(i,1),map(i,2),map(i,3),map(i,4));
+    for j = 1:size(beacon)
+        [isect,x,y,ua]= intersectPoint(camera(1),camera(2),map(i,1),...
+            map(i,2),beacon(j,1),beacon(j,2),map(i,3),map(i,4));
         if isect == 1
-            exp(j*2-1:j*2,:) = bigNum;
+            exp(j*2-1:j*2,) = bigNum;
         end
     end
 end

@@ -33,7 +33,7 @@ end
 for i = 1:length(beaconNums)
     %hBeacon gives [cameraZ; cameraX] which is [beaconX,beaconY] in robot
     %coords
-expBeacon = hBeacon(pose,beaconNums(i),beaconLoc,cameraRad); %hBeacon gives
+expBeacon = hBeacon(pose,beaconNums(i),beaconLoc,map,cameraRad); %hBeacon gives
 exp = [exp,expBeacon'];
 end
 

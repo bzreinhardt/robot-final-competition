@@ -103,11 +103,17 @@ resampleFcn = @noResample;
 %% Initiallize loop variables
 tic
 start = 'start'
+%counter keeping track of number of loop iterations
 i = 0;
 iMaxLoc = 40;
+% counter keeping track of beacon sightings
 beaconSize = 0;
+% boolean keeping track of whether you have seen a beacon
 beaconSeen = 0;
+% keep track of initial turning odometry
 distTurned = 0;
+%number of beacon sightings necessary for confident localization
+minBeacons = 5;
 %plot the map
 % figure(1);clf; 
 % wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints)
@@ -196,32 +202,47 @@ while toc < maxTime
     
     
     %% CONTROL FUNCTION (send robot commands)
-    if i == iMaxLoc %or confident of location TODO
-        SetFwdVelAngVelCreate(CreatePort, 0, 0);
-        delete(parts);
-        delete(guess);
-        break;
-    else
+%     if i == iMaxLoc %or confident of location TODO
+%         SetFwdVelAngVelCreate(CreatePort, 0, 0);
+%         delete(parts);
+%         delete(guess);
+%         break;
+%     else
         cmdV = slowV;
         cmdW = slowV/wheel2center;
-    end
+%     end
     
     % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it
     if noRobotCount >= 3
         SetFwdVelAngVelCreate(CreatePort, 0,0);
-    else
+    elseif beaconSize < 4 && distTurned < 2*pi
+        % if you haven't seen enough beacons, keep turning in a cirlce
         [cmdV, cmdW] = limitCmds(cmdV, cmdW, maxV,wheel2center);
         SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+    elseif beaconSize < 4 && distTurned > 2*pi
+        % if you haven't seen enough beacons, and have turned in a circle,
+        % follow a wall
+        SetFwdVelAngVelCreate(CreatePort, 0, 0);
+        
+        break;
+    else 
+        %assume you're localized and follow a wall
+        SetFwdVelAngVelCreate(CreatePort, 0, 0);
+        
+        break;
     end
     
     pause(0.1);
-    SetFwdVelAngVelCreate(CreatePort, 0, 0);
+    
 end
 
 % set forward and angular velocity to zero (stop robot) before exiting the function
 SetFwdVelAngVelCreate(CreatePort, 0,0 );
+%erase stuff on map at end of run
+delete(parts);
+delete(guess);
 
 end
 
