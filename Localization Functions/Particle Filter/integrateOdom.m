@@ -48,7 +48,7 @@ end
 global_Q_robot = [cos(X_0(3,1)) -sin(X_0(3,1)); sin(X_0(3,1)) cos(X_0(3,1))]; %rotation matrix from robot frame to global frame
 dX_global = global_Q_robot*dX_robot; %change in position global frame
 X_global = dX_global+X_0(1:2,1); %new absolute position in global frame
-theta_new = X_0(3,1)+phi(1); %new heading
+theta_new = mod(X_0(3,1)+phi(1),2*pi); %new heading - keep heading between 0 and 2pi
 X_f(:,1) = [X_global;theta_new]; %new pose
 
 if length(d) > 1

@@ -51,7 +51,10 @@ end
 if size(z,2) ~= size(expectMeas,2)
     warning('uh oh');
 end
-
+try
  w = mvnpdf(z,expectMeas,Q_good);
+catch err
+    disp('problem with your weight');
+end
 
 end

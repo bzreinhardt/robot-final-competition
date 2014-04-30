@@ -1,4 +1,4 @@
-function[dataStore] = initialLoc(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = KFTest(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
 % initialLoc: localize robot to initial waypoint on map. 
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
@@ -57,7 +57,7 @@ dataStore = struct('truthPose', [],...
                    'ARs',[], 'sonars',[],'measurements',[],...
                    'predictMeasTrue',[],'predictMeasGuess',[],...
                    'particles',[],'pfvar',[],...
-                   'X',[]);
+                   'X',[],'mu',[],'sigma',[]);
 
 
 % Variable used to keep track of whether the overhead localization "lost"
@@ -88,20 +88,23 @@ mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
     max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
 angles = [0:pi/4:(2*pi-pi/4)];
 X_0 = initializePF(waypoints,angles);
+
 %number of particles
 M = size(X_0,2);
 
 Q_sonar = 0.01;
 cov_AR = 0.005;
-R = [0.2 0 0; 0 0.2 0; 0 0 0.2];
+R = 0.2*eye(3);
 theta = 0.1;
 %rotM = [cos(theta) -sin(theta);sin(theta) cos(theta)];
 Q_AR = cov_AR*eye(2);
 %function to predict measurement based on map
 
 %function to predict position based on odometry data
+G = @GjacDiffDrive;
 g = @integrateOdom;
 h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
+H = @HjacSonarAR;
 %noise functions
 normNoise = @()normStateNoise([3,M],R);
 %resampling functions
@@ -137,20 +140,29 @@ end
 
 %% Main loop
 while toc < maxTime
+    
+    %% READ & STORE SENSOR DATA
+    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
+    %% Loop Housekeeping
     i = i + 1;
     if i == 1
-        X_in = X_0;
+        %change me
+        X_in = dataStore.truthPose(end,2:4)'*ones(1,M);
+        mu = dataStore.truthPose(end,2:4)';
+        sigma = 0.2*eye(3);
     else
         X_in = X_out;
-        delete(parts);
+%        delete(parts);
         delete(guess);
+        delete(muGuess);
+%        delete(covE);
         if inLab == 1
             delete(robot);
             delete(truth);
         end
     end
-    %% READ & STORE SENSOR DATA
-    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
+    %% Condition data
+    
     %keep track of approximate distance turned 
     distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
@@ -173,34 +185,50 @@ while toc < maxTime
     
     %% RUN PARTICLE FILTER
     p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims);
-    [X_out,w_out] =  particleFilter(X_in,measurements,dataStore.odometry(end,2:3)',...
+    u = dataStore.odometry(end,2:3)';
+    [X_out,w_out] =  particleFilter(X_in,measurements,u,...
         g,p_z,normNoise,resampleFcn);
     %prune the output
     X = genGuess(X_out,w_out);
-    [locEvent,predictMeasGuess] = testConfidence(X,measurements,h,sonars,ARs);
+    %% RUN KALMAN FILTER
+    [mu,sigma] = EKF(mu,sigma,measurements, u,g,h, G, H, ...
+        Q_sonar,Q_AR, R,sonars,ARs);
+    %% Test for walls, errors, waypoints
     
-    if locEvent == 1
+    
+    [locEventPF,predictMeasGuess] = testConfidence(X,measurements,h,sonars,ARs);
+    [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
+    
+    if locEventPF == 1
         badMeas = badMeas +1;
         goodMeas = 0;
+        if badMeas > 3
+            disp('I dont know where I am');
+        end
+            
     else
         goodMeas = goodMeas + 1;
         badMeas = 0;
+        lastGoodMeas = X;
     end
     
     %% Draw stuff
     col = 'k';
-    
+   
+   
+    muGuess = quiver(mu(1),mu(2),cos(mu(3)),sin(mu(3)));
     guess = quiver(X(1),X(2),cos(X(3)),sin(X(3)));
-    parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
-    set(parts,'color',col);
+%    parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
+   set(muGuess,'color','b');
     set(guess,'color','r');
     if inLab == 1
         xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
         robot = circle(X_true(1:2),sonarR,10);
         truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
         set(truth,'color','g');
+        covE = plotCovEllipse(mu(1:2),sigma(1:2,1:2)); 
     end
-    
+    disp(sigma);
     drawnow;
     
     
@@ -230,6 +258,8 @@ while toc < maxTime
     dataStore.particles = [dataStore.particles; X_out;w_out];
 %    dataStore.pfvar = [dataStore.pfvar;X_var];
     dataStore.X = [dataStore.X;X'];
+    dataStore.mu = [dataStore.mu;mu'];
+    dataStore.sigma = [dataStore.sigma;sigma];
     
     
     %% CONTROL FUNCTION (send robot commands)
@@ -248,21 +278,11 @@ while toc < maxTime
     % if overhead localization loses the robot for too long, stop it
     if noRobotCount >= 3
         SetFwdVelAngVelCreate(CreatePort, 0,0);
-    elseif goodMeas < 5 && distTurned < 2*pi
-        % if you haven't seen enough beacons, keep turning in a cirlce
-        [cmdV, cmdW] = limitCmds(cmdV, cmdW, maxV,wheel2center);
-        SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
-    elseif goodMeas < 4 && distTurned > 2*pi
-        % if you haven't seen enough beacons, and have turned in a circle,
-        % follow a wall
-        SetFwdVelAngVelCreate(CreatePort, 0, 0);
-        
-        break;
+    
     else 
         %assume you're localized and follow a wall
-        SetFwdVelAngVelCreate(CreatePort, 0, 0);
+        SetFwdVelAngVelCreate(CreatePort, slowV, 0);
         
-        break;
     end
     
     pause(0.1);

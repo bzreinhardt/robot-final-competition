@@ -44,15 +44,15 @@ predMeas_dy = feval(h,X+[0;dy;0],ARs,sonars);
 predMeas_dtheta = feval(h,X+[0;0;dtheta],ARs,sonars);
 H_t = [(predMeas_dx-predMeas)/dx;(predMeas_dy-predMeas)/dy;...
     (predMeas_dtheta-predMeas)/dtheta]';
-    ranges_x = sonarPredict(X,map,robotRad,angles,maxRange);
-    ranges_xh = sonarPredict(X+[h_x;0;0],map,robotRad,angles,maxRange);
-    ranges_y = sonarPredict(X,map,robotRad,angles,maxRange);
-    ranges_yh = sonarPredict(X+[0;h_y;0],map,robotRad,angles,maxRange);
-    ranges_theta = sonarPredict(X,map,robotRad,angles,maxRange);
-    ranges_thetah = sonarPredict(X+[0;0;h_theta],map,robotRad,angles,maxRange);
-    dR_dx = (ranges_xh-ranges_x)/h_x;
-    dR_dy = (ranges_yh-ranges_y)/h_y;
-    dR_dtheta = (ranges_thetah-ranges_theta)/h_theta;
-    H_t = [dR_dx,dR_dy,dR_dtheta];
+%     ranges_x = sonarPredict(X,map,robotRad,angles,maxRange);
+%     ranges_xh = sonarPredict(X+[h_x;0;0],map,robotRad,angles,maxRange);
+%     ranges_y = sonarPredict(X,map,robotRad,angles,maxRange);
+%     ranges_yh = sonarPredict(X+[0;h_y;0],map,robotRad,angles,maxRange);
+%     ranges_theta = sonarPredict(X,map,robotRad,angles,maxRange);
+%     ranges_thetah = sonarPredict(X+[0;0;h_theta],map,robotRad,angles,maxRange);
+%     dR_dx = (ranges_xh-ranges_x)/h_x;
+%     dR_dy = (ranges_yh-ranges_y)/h_y;
+%     dR_dtheta = (ranges_thetah-ranges_theta)/h_theta;
+%    % H_t = [dR_dx,dR_dy,dR_dtheta];
 
 end
