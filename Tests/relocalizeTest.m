@@ -57,7 +57,7 @@ dataStore = struct('truthPose', [],...
                    'ARs',[], 'sonars',[],'measurements',[],...
                    'predictMeasTrue',[],'predictMeasGuess',[],...
                    'particles',[],'pfvar',[],...
-                   'X',[],'mu',[],'sigma',[]);
+                   'X',[],'mu',[],'sig',[]);
 
 
 % Variable used to keep track of whether the overhead localization "lost"
@@ -110,6 +110,7 @@ normNoise = @()normStateNoise([3,M],R);
 %resampling functions
 %lowVarResample = @lowVarSample;
 resampleFcn = @noResample;
+sig0 = 0.2*eye(3);
                         
 %% Initiallize loop variables
 tic
@@ -149,15 +150,15 @@ while toc < maxTime
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     
     %Test for localizing
-    %REMOVE THIS
-    X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%     %REMOVE THIS
+%     X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
         %change me
         X_in = X_0;
         mu = [0;0;0];
-        sigma = 0.2*eye(3);
+        sig = sig0;
     else
         X_in = X_out;
 %        delete(parts);
@@ -196,23 +197,26 @@ while toc < maxTime
     %prune the output
     X_PF = genGuess(X_out,w_out);
    
-%     %% RUN KALMAN FILTER
-%     [mu,sigma] = EKF(mu,sigma,measurements, u,g,h, G, H, ...
-%         Q_sonar,Q_AR, R,sonars,ARs);
+    %% RUN KALMAN FILTER
+    if initLoc == 1
+        [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
+        Q_sonar,Q_AR, R,sonars,ARs);
+    [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
+    end
     %% Test for walls, errors, waypoints
     
     
     [locEventPF,predictMeasGuess] = testConfidence(X_PF,measurements,h,sonars,ARs);
- %   [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
+  
     %different localization situations
-  %  if localized == 1 
- %   locEvent = locEventEKF;
- %   X = mu;
-    %
- %   else
+    if localized == 1
+        locEvent = locEventEKF;
+        X = mu;
+        
+    else
         X = X_PF;
         locEvent = locEventPF;
-  %  end
+    end
     %switch resampling function when you see a beacon for the first time
     if beaconSize > 0 && beaconSeen == 0
         resampleFcn = @lowVarSample;
@@ -235,12 +239,16 @@ while toc < maxTime
     % determine that you're localized if you've got 3 good measurements in
     % a row
     if goodMeas >= 3
+        if localized == 0
+            disp('found myself');
+        end
         localized = 1;
         if initLoc == 0
             initLoc = 1;
             disp('found myself for the first time')
         end
- %       mu = X;
+      mu = X;
+      sig = sig0;
     elseif badMeas >= 3;
         localized = 0;
     end
@@ -250,8 +258,8 @@ while toc < maxTime
         badMeas = badMeas +1;
         goodMeas = 0;
         if badMeas > 3
-            disp('I dont know where I am');
- %           X_out = relocalize(mu,sigma,M);
+            disp('Lost myself');
+ %           X_out = relocalize(mu,sig,M);
             reloc_i = 0;
         end
         guessCol = 'r';
@@ -279,9 +287,9 @@ while toc < maxTime
         robot = circle(X_true(1:2),sonarR,10);
         truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
         set(truth,'color','g');
-        covE = plotCovEllipse(mu(1:2),sigma(1:2,1:2)); 
+        covE = plotCovEllipse(mu(1:2),sig(1:2,1:2)); 
     end
-    %disp(sigma);
+    %disp(sig);
     drawnow;
     
     
@@ -313,7 +321,7 @@ while toc < maxTime
 %    dataStore.pfvar = [dataStore.pfvar;X_var];
     dataStore.X = [dataStore.X;X'];
     dataStore.mu = [dataStore.mu;mu'];
-    dataStore.sigma = [dataStore.sigma;sigma];
+    dataStore.sig = [dataStore.sig;sig];
     
     
     %% CONTROL FUNCTION (send robot commands)

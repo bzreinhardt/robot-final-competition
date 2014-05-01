@@ -25,17 +25,20 @@ function[optWall] = hOptWall(pose,beaconNums,sonars,map,beaconLoc,cameraRad,sona
 %   Reinhardt, Benjamin
 % add each optional wall to the map and compare the expected value to the
 % actual value
+predMeas = feval(hBeaconSonar,pose,beaconNums,sonars,map,beaconLoc,cameraRad,sonarRad);
+predSonar = predMeas(1:numel(sonars));
+measSonar = meas(1:numel(sonars));
+currentError = sum(predSonar - measSonar);
+optWall = 0; smallestError = currentError;
 
-currentError = abs(sum(meas - predMeas));
-optWall = []; smallestErr = currentError;
 for i = 1:size(optWalls,1)
     %add wall to map
     testMap = [map;optWalls(i,:)];
     testPred = feval(hBeaconSonar,pose,beaconNums,sonars,testMap,beaconLoc,cameraRad,sonarRad);
-    testError = abs(sum(meas - testPred));
-    if testError < currentError
+    testError = sum(testPred(1:numel(sonars))-measSonar;
+    if testError < smallestError
         optWall = i;
-        return;
+        smallestErr = testError;
     end
 end
 end

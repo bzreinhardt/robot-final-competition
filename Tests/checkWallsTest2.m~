@@ -1,4 +1,4 @@
-function[dataStore] = relocalizeTest(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = checkWallsTest2(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
 % relocalizeTest: test relocalization function  
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
@@ -110,6 +110,7 @@ normNoise = @()normStateNoise([3,M],R);
 %resampling functions
 %lowVarResample = @lowVarSample;
 resampleFcn = @noResample;
+sig0 = 0.2*eye(3);
                         
 %% Initiallize loop variables
 tic
@@ -134,6 +135,7 @@ beaconSeenIndex = 0;
 localized = 0; %keep track of whether you are confident of your position
 initLoc = 0; %keep track of whether you have figured out where you are initially
 resamp = 0;  %keep track of whether you should resample
+checkWall = -1; %keep track of what wall needs to be checked based on current position 
 
 if inLab == 1
 figure(1);clf; 
@@ -148,16 +150,20 @@ while toc < maxTime
     %% READ & STORE SENSOR DATA
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     
-    %Test for localizing
-    %REMOVE THIS
-    X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+    
+     
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
+        %Test for localizing
+%     %REMOVE THIS
+        X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+     localized = 1;
+     initLoc = 1;
         %change me
         X_in = X_0;
-        mu = [0;0;0];
-        sig = 0.2*eye(3);
+        mu = X_0(:,1);
+        sig = sig0;
     else
         X_in = X_out;
 %        delete(parts);
@@ -195,26 +201,36 @@ while toc < maxTime
         g,p_z,normNoise,resampleFcn);
     %prune the output
     X_PF = genGuess(X_out,w_out);
-   
+   [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
     %% RUN KALMAN FILTER
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
         Q_sonar,Q_AR, R,sonars,ARs);
+    [locEventEKF,predictMeasGuess,wallEvent] = testConfidence(mu,measurements,h,sonars,ARs);
     end
-    %% Test for walls, errors, waypoints
-    
-    
-    [locEventPF,predictMeasGuess] = testConfidence(X_PF,measurements,h,sonars,ARs);
- %   [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
-    %different localization situations
+    %% Localization Algorithm
+ 
+    %If you're confident of your position, use an EKF
     if localized == 1
         locEvent = locEventEKF;
-        X = mu;
+        if wallEvent == 2
+            optWall = hOptWall(X,ARs,sonars,map,beaconLoc,cameraR,...
+                sonarR,optWalls,@hBeaconSonar,measurements,predictMeasGuess)
+            checkWall = 
+        else
+            X = mu;
+        end
         
+    %If you're not confident, use the particle filter    
     else
         X = X_PF;
         locEvent = locEventPF;
+        
     end
+    %If you're localized, but have a sonar discrepency, check for optional
+    %walls
+    
+    
     %switch resampling function when you see a beacon for the first time
     if beaconSize > 0 && beaconSeen == 0
         resampleFcn = @lowVarSample;
@@ -239,36 +255,39 @@ while toc < maxTime
     if goodMeas >= 3
         if localized == 0
             disp('found myself');
+            mu = X;
+            sig = sig0;
         end
         localized = 1;
         if initLoc == 0
             initLoc = 1;
             disp('found myself for the first time')
         end
-      mu = X;
-      sig = sig0;
-    elseif badMeas >= 3;
-        localized = 0;
+       
     end
-    disp(localized)
     
+    %react to bad measurements
     if locEvent == 1
+        %increment bad measurement counter
         badMeas = badMeas +1;
         goodMeas = 0;
-        if badMeas > 3
+        %three bad measurements in a row means you're lost
+        if badMeas > 3 && initLoc == 1
+            localized = 0;
             disp('Lost myself');
- %           X_out = relocalize(mu,sig,M);
+            %start a particle set around 
+            X_out = lastGoodMeas*ones(1,M)+normStateNoise([3,M],R);
             reloc_i = 0;
         end
         guessCol = 'r';
-            
+        
     else
         goodMeas = goodMeas + 1;
         badMeas = 0;
         lastGoodMeas = X;
-        mu = X;
         guessCol = 'g';
     end
+    disp(localized)
     
     %% Draw stuff
     col = 'k';
@@ -341,7 +360,7 @@ elseif locEvent == 2
 elseif max(dataStore.bump(end,2:end)) == 1
 %if you bump into a wall, back up 
 travelDist(CreatePort, slowV, -0.1);
-
+turnAngle(CreatePort, slowV/wheel2center, pi/2);
 elseif localized == 1
     %stop
     cmdV = slowV;

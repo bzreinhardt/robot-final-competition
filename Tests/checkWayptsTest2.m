@@ -1,4 +1,4 @@
-function[dataStore] = relocalizeTest(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = checkWallsTest2(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
 % relocalizeTest: test relocalization function  
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
@@ -110,6 +110,7 @@ normNoise = @()normStateNoise([3,M],R);
 %resampling functions
 %lowVarResample = @lowVarSample;
 resampleFcn = @noResample;
+sig0 = 0.2*eye(3);
                         
 %% Initiallize loop variables
 tic
@@ -149,15 +150,15 @@ while toc < maxTime
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
     
     %Test for localizing
-    %REMOVE THIS
-    X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%     %REMOVE THIS
+%     X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
         %change me
         X_in = X_0;
         mu = [0;0;0];
-        sig = 0.2*eye(3);
+        sig = sig0;
     else
         X_in = X_out;
 %        delete(parts);
@@ -200,12 +201,13 @@ while toc < maxTime
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
         Q_sonar,Q_AR, R,sonars,ARs);
+    [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
     end
     %% Test for walls, errors, waypoints
     
     
     [locEventPF,predictMeasGuess] = testConfidence(X_PF,measurements,h,sonars,ARs);
- %   [locEventEKF,predictMeasGuess] = testConfidence(mu,measurements,h,sonars,ARs);
+  
     %different localization situations
     if localized == 1
         locEvent = locEventEKF;

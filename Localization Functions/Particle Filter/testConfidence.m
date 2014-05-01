@@ -1,4 +1,4 @@
-function [locEvent,predictMeasGuess] = testConfidence(X,measurements,h,sonars,ARs)
+function [locEvent,predictMeasGuess,wallEvent] = testConfidence(X,measurements,h,sonars,ARs)
 %localize from a particle set
 %
 %   INPUTS
@@ -31,7 +31,7 @@ locEvent = 0;
 %error too high
 if abs(measErr) > errThreshold
     locEvent = 1;
-    return;
+    
 end
 %
 
@@ -55,7 +55,9 @@ end
 %check for systematic sonar error
 sonarErr = predictMeasGuess(1:length(sonars))-measurements(1:length(sonars));
 if sum(sonarErr) > sonarMargin
-    locEvent = 2;
+    wallEvent = 2;
+else
+    wallEvent = 0;
 end
 
 
