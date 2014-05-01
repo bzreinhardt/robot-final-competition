@@ -32,7 +32,7 @@ G_Q_R = [cos(robotPose(3)), -sin(robotPose(3)); ...
 
 inf = maxRange + 1; %make sure our infinte vector goes past the max range
 %do we assume the sonar detectors are on the outer edge of the robot?
-range = zeros(length(angles),1); %initialize range matrix
+range = inf*ones(length(angles),1); %initialize range matrix
 for i = 1:length(angles)
     %cycle through the sensors
     %assume sensor is mounted at angle on radius of robot

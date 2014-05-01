@@ -1,6 +1,7 @@
 %this is a script to automate as much of the robot setup and calibration as
 %possible
-
+global inLab
+inLab = 1;
 %a) get a robot
 %b) robot[ID].coecis.cornell.edu
 %c) get AR tag

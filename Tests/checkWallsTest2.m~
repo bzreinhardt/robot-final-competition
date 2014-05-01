@@ -214,9 +214,19 @@ while toc < maxTime
     if localized == 1
         locEvent = locEventEKF;
         if wallEvent == 2
+            %a missing wall will screw up the EKF, so if you suspect a wall
+            %go completely on odometry
+            X = feval(g,X,u);
             optWall = hOptWall(X,ARs,sonars,map,beaconLoc,cameraR,...
                 sonarR,optWalls,@hBeaconSonar,measurements,predictMeasGuess)
-            checkWall = 
+            %CHANGE THIS MAYBE Things to do for wall checking
+            if checkWall == optWall 
+                disp(strcat('Found wall # ',num2str(optWall)));
+                wallpt = [(optWalls(optWall,1)+optWalls(optWall,3))/2;
+                    (optWalls(optWall,2)+optWalls(optWall,3))/4];
+                plot(wallpt(1),wallpt(2),'
+                
+                
         else
             X = mu;
         end

@@ -74,6 +74,7 @@ maxV = 0.3;     % Max allowable forward velocity with no angular
 wheel2center = 0.13;  
 sonarR = 0.16;
 cameraR = 0;
+closeEnough = sonarR;
 if inLab == 1
     load('ExampleLabMap_2014.mat');
     cameraR = 0.15;
@@ -135,7 +136,11 @@ beaconSeenIndex = 0;
 localized = 0; %keep track of whether you are confident of your position
 initLoc = 0; %keep track of whether you have figured out where you are initially
 resamp = 0;  %keep track of whether you should resample
-checkWall = -1; %keep track of what wall needs to be checked based on current position 
+checkWall = -1; %keep track of what wall needs to be checked based on current position
+% waypoints left to visit
+wayPtsUnvisited = [ waypoints;ECwaypoints];
+% waypoints already visited
+wayPtsVisited = [];
 
 if inLab == 1
 figure(1);clf; 
@@ -156,21 +161,21 @@ while toc < maxTime
     i = i + 1;
     if i == 1
         %Test for localizing
-%     %REMOVE THIS
+        %     %REMOVE THIS
         X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
-     localized = 1;
-     initLoc = 1;
+        localized = 1;
+        initLoc = 1;
         %change me
         X_in = X_0;
         mu = X_0(:,1);
         sig = sig0;
     else
         X_in = X_out;
-%        delete(parts);
+        %        delete(parts);
         delete(guess);
-%        delete(muGuess);
+        %        delete(muGuess);
         delete(PFGuess);
-%        delete(covE);
+        %        delete(covE);
         if inLab == 1
             delete(robot);
             delete(truth);
@@ -178,15 +183,15 @@ while toc < maxTime
     end
     %% Condition data
     
-    %keep track of approximate distance turned 
+    %keep track of approximate distance turned
     distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
     beaconSize = beaconSize + length(beacon);
     
     
-  
-        
+    
+    
     %put data in comparable form
     [measurements, sonars, ARs ] = conditionSensors(sonar, beacon);
     %predict measurement
@@ -201,16 +206,18 @@ while toc < maxTime
         g,p_z,normNoise,resampleFcn);
     %prune the output
     X_PF = genGuess(X_out,w_out);
-   [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
+    [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
     %% RUN KALMAN FILTER
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
-        Q_sonar,Q_AR, R,sonars,ARs);
-    [locEventEKF,predictMeasGuess,wallEvent] = testConfidence(mu,measurements,h,sonars,ARs);
+            Q_sonar,Q_AR, R,sonars,ARs);
+        [locEventEKF,predictMeasGuess,wallEvent] = testConfidence(mu,measurements,h,sonars,ARs);
     end
     %% Localization Algorithm
- 
+    
     %If you're confident of your position, use an EKF
+    %If you're localized, but have a sonar discrepency, check for optional
+    %walls
     if localized == 1
         locEvent = locEventEKF;
         if wallEvent == 2
@@ -219,9 +226,31 @@ while toc < maxTime
             X = feval(g,X,u);
             optWall = hOptWall(X,ARs,sonars,map,beaconLoc,cameraR,...
                 sonarR,optWalls,@hBeaconSonar,measurements,predictMeasGuess)
+            %CHANGE THIS MAYBE Things to do for wall checking
+            if checkWall == optWall && optWall ~= 0
+                disp(strcat('Found wall # ',num2str(optWall)));
+                wallpt = [(optWalls(optWall,1)+optWalls(optWall,3))/2;
+                    (optWalls(optWall,2)+optWalls(optWall,4))/2];
+                plot(wallpt(1),wallpt(2),'rx');
+                map = [map;optWalls(optWall,:)];
+                %need to change h function handle to have new map
+                h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
+            elseif checkWall == 0
+                checkWall = optWall;
+            else
+                checkWall = 0;
+            end
             
         else
             X = mu;
+        end
+        %if you're localized, check for waypoints
+        [wayPtsVisited,wayPtsUnvisited,wayPtAlert] = checkWayPts(X,wayPtsVisited,wayPtsUnvisited,closeEnough);
+        if wayPtAlert == 1
+            %do stuff - replan, beep etc
+            disp('WAYPOINT!');
+            plot(wayPtsVisited(end,1),wayPtsVisited(end,2),'gx');
+            wayPtAlert = 0;
         end
         
     %If you're not confident, use the particle filter    
@@ -230,8 +259,7 @@ while toc < maxTime
         locEvent = locEventPF;
         
     end
-    %If you're localized, but have a sonar discrepency, check for optional
-    %walls
+   
     
     
     %switch resampling function when you see a beacon for the first time
