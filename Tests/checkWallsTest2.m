@@ -162,9 +162,9 @@ while toc < maxTime
     if i == 1
         %Test for localizing
         %     %REMOVE THIS
-        X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
-        localized = 1;
-        initLoc = 1;
+%         X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%         localized = 1;
+%         initLoc = 1;
         %change me
         X_in = X_0;
         mu = X_0(:,1);
@@ -205,6 +205,10 @@ while toc < maxTime
     [X_out,w_out] =  particleFilter(X_in,measurements,u,...
         g,p_z,normNoise,resampleFcn);
     %prune the output
+    if beaconSeen == 0 && i > 1
+        %if you haven't switched resampling on, compound the weights
+        w_out = w_out.*dataStore.particles(end,:);
+    end
     X_PF = genGuess(X_out,w_out);
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
     %% RUN KALMAN FILTER
@@ -391,7 +395,7 @@ elseif locEvent == 2
 elseif max(dataStore.bump(end,2:end)) == 1
 %if you bump into a wall, back up 
 travelDist(CreatePort, slowV, -0.1);
-turnAngle(CreatePort, slowV/wheel2center, pi/2);
+turnAngle(CreatePort, slowV, pi/2);
 elseif localized == 1
     %stop
     cmdV = slowV;
