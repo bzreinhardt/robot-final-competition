@@ -19,7 +19,7 @@ function [exp] = hBeacon(pose,beaconNums,beaconLoc,map,robotRad)
 camViewAngle = 2*pi/3; %view angle on a single side of the camera
 camViewDist = 2; %maximum distance the camera can see in meters
 bigNum = 100;
-global inLab;
+global isLab;
 
 if size(pose,1) ~= 3
     pose = pose';
@@ -41,7 +41,7 @@ R_Q_G = [cos(pose(3)) sin(pose(3));  -sin(pose(3)) cos(pose(3))];
 C_beacons = R_Q_G*(beacon(:,2:3)'-pose(1:2))-[robotRad;0];
 exp = C_beacons;
 for j = 1:size(beacon,1)
-if inLab == 1
+if isLab == 1
             exp(j*2,:) = -1*exp(j*2,:);
 end
 end

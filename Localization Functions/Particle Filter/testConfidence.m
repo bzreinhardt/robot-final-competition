@@ -16,8 +16,8 @@ function [locEvent,predictMeasGuess,wallEvent] = testConfidence(X,measurements,h
 
 %constant that controls how much larger you need the best particle to be in
 %order to be confident
-sonarWeight = 0.4;
-errThreshold = 0.2;
+sonarWeight = 0.3;
+errThreshold = 0.25;
 %threshold summed sonar error to trigger optional wall detection
 sonarMargin = 0.1;
 predictMeasGuess = feval(h,X,ARs,sonars);

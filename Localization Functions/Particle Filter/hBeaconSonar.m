@@ -17,7 +17,7 @@ function [exp] = hBeaconSonar(pose,beaconNums,sonars,map,beaconLoc,cameraRad,son
 %% constants 
 
 camViewAngle = 2*pi/3; %view angle on a single side of the camera
-camViewDist = 2; %maximum distance the camera can see in meters
+camViewDist = 3; %maximum distance the camera can see in meters
 maxRange = 2.6;
 
 

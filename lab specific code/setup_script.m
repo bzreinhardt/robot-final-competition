@@ -1,7 +1,7 @@
 %this is a script to automate as much of the robot setup and calibration as
 %possible
-global inLab
-inLab = 1;
+global isLab
+isLab = 1;
 %a) get a robot
 %b) robot[ID].coecis.cornell.edu
 %c) get AR tag
@@ -17,7 +17,7 @@ cmd2 = 'sudo ./main';
 %enter password again
 
 nextStep = input('successfully connected to robot?' );
-
+ID = strcat('robot',num2str(ID))
 ports = CreateBeagleInit(ID);
 CreatePort = ports.create;
 BeaglePort = ports.beagle;
@@ -26,6 +26,12 @@ BeaconPort = ports.beacon;
 BeepRoomba(CreatePort);
 
 CalibGUI(ports);
+
+tagNum = ARtag;
+
+maxTime = 500;
+
+SetFwdVelAngVelCreate(CreatePort,0,0);
 
 
 
