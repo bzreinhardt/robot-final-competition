@@ -37,6 +37,7 @@ noise = feval(stateNoise);
 for m=1:M
     X_pred(:,m) = feval(p_u,X_in(:,m),u)+noise(:,m)  ; %propigate each particle by updating according to the
     %dynamics and adding process noise
+    X_pred(3) = mod(X_pred(3),2*pi);
     w(m) = feval(p_z,X_pred(:,m),z); %find the weight of each propigated particle
     %if all the sensors can't be compared, give all the particles equal
     %weight

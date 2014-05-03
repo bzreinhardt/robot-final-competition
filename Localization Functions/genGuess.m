@@ -9,7 +9,7 @@ elseif nargin == 2
     %assign best X
     X_best = X_in(:,biggestI);
 
-    X_est = X_weightmean;
+    X_est = X_best;
 
 end
 end

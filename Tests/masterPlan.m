@@ -1,4 +1,4 @@
-function[dataStore] = checkWallsTest2(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
 % relocalizeTest: test relocalization function  
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of

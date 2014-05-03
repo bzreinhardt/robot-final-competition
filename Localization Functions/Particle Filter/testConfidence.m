@@ -16,20 +16,23 @@ function [locEvent,predictMeasGuess,wallEvent] = testConfidence(X,measurements,h
 
 %constant that controls how much larger you need the best particle to be in
 %order to be confident
-margin = 0.05;
-errThreshold = 0.1;
+sonarWeight = 0.4;
+errThreshold = 0.2;
 %threshold summed sonar error to trigger optional wall detection
 sonarMargin = 0.1;
 predictMeasGuess = feval(h,X,ARs,sonars);
 %difference of measurements at guessed position from true measurements (ie
 %if the guess predicted measurement is too high, err will be positive
-measErr = sum(predictMeasGuess-measurements);
+measErr = predictMeasGuess-measurements;
+sonarErr = measErr(1:numel(sonars));
+beaconErr = measErr(numel(sonars)+1:numel(sonars)+numel(ARs));
+sumErr = sum(abs([sonarWeight*sonarErr,beaconErr]));
 
 %default err = 0;
 locEvent = 0;
 
 %error too high
-if abs(measErr) > errThreshold
+if abs(sumErr) > errThreshold
     locEvent = 1;
     
 end
