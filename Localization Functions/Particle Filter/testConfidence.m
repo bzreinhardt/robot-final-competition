@@ -19,7 +19,7 @@ function [locEvent,predictMeasGuess,wallEvent] = testConfidence(X,measurements,h
 sonarWeight = 0.3;
 errThreshold = 0.25;
 %threshold summed sonar error to trigger optional wall detection
-sonarMargin = 0.1;
+sonarMargin = 0.2;
 predictMeasGuess = feval(h,X,ARs,sonars);
 %difference of measurements at guessed position from true measurements (ie
 %if the guess predicted measurement is too high, err will be positive

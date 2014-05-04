@@ -105,7 +105,9 @@ X_0 = initializePF(waypoints,angles);
 %number of particles
 M = size(X_0,2);
 
-Q_sonar = 0.1;
+Q_sonar_low = 0.1;
+Q_sonar_high = 0.5;
+Q_sonar = Q_sonar_low;
 cov_AR = 0.01;
 R = 0.01*eye(3);
 theta = 0.1;
@@ -303,6 +305,17 @@ while toc < maxTime
     %walls
     if localized == 1
         locEvent = locEventEKF;
+        if wallEvent == 2
+            disp('I might see an optional wall');
+            % if there is a systeming error in the sonars, there might be
+            % an optional wall, - distrust the sonar sensors more
+            Q_sonar = Q_sonar_high;
+        elseif wallEvent == 0 && Q_sonar == Q_sonar_high
+            % if no wall but Q_sonar is still high, reset sonar
+            Q_sonar = Q_sonar_low;
+            disp('resetting sonar Q');
+        end
+         X = mu;
 %         if wallEvent == 2 || optWallFlag == 2
 %             %a missing wall will screw up the EKF, so if you suspect a wall
 %             %go completely on odometry
@@ -325,12 +338,6 @@ while toc < maxTime
 % %                 map = [map;optWalls(optWall,:)];
 % %                 %need to change h function handle to have new map
 %                
-        
-       
-            
-       
-            X = mu;
-        
         %if you're localized, check for waypoints
         [wayPtsVisited,wayPtsUnvisited,wayPtAlert] = checkWayPts(X,wayPtsVisited,wayPtsUnvisited,closeEnough);
         if wayPtAlert == 1
@@ -338,14 +345,15 @@ while toc < maxTime
             disp('WAYPOINT!');
             plot(wayPtsVisited(end,1),wayPtsVisited(end,2),'gx');
             wayPtAlert = 0;
+            if isLab
+                BeepRoomba(CreatePort);
+            end
         end
         
     %If you're not confident, use the particle filter    
     else
         X = X_PF;
         locEvent = locEventPF;
-
-        
     end
    
  %% LOCALIZATION ALGORITHM - Determine confidence   
@@ -411,7 +419,11 @@ while toc < maxTime
         end
         guessCol = 'g';
     end
-    disp(localized)
+    if localized == 1
+        disp('localized')
+    elseif localized == 0
+        disp('unlocalized')
+    end
     
     
    %% PLANNING STUFF - KEVIN's CODE GOES HERE
@@ -605,7 +617,8 @@ elseif localized == 1
             currPose = [toc;X]';
             
             if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
-                SetFwdVelAngVelCreate(CreatePort, 0,0 );
+     %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
+      cmdV = 0; cmdW = 0;
                 dontMove = 1;
                 walls = [walls; optWalls(removeIdx,:)];
                 optWalls(removeIdx,:) = [];
@@ -620,7 +633,8 @@ elseif localized == 1
                     gotopt = gotopt + 1;
                 else
                     %%
-                    SetFwdVelAngVelCreate(CreatePort, 0,0 );
+ %                   SetFwdVelAngVelCreate(CreatePort, 0,0 );
+ cmdV = 0; cmdW = 0;
                     if (wpOrWall == 3)
                         visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
                         unvisitedWPs(:,removeIdx) = [];
@@ -642,7 +656,7 @@ elseif localized == 1
             if (dontMove == 0 )
             [velX, velW] = updateVW(waypoints, gotopt, currPose);
             [cmdV,cmdW] = limitCmds(velX,velW,maxV,robotRad);
-            SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+ %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
             end
         end
           if max(dataStore.bump(end,2:end)) == 1
@@ -656,6 +670,7 @@ end
  if noRobotCount >= 3
         SetFwdVelAngVelCreate(CreatePort, 0,0);
  else
+     [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
      SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
  end
     % move forward if not bumped
