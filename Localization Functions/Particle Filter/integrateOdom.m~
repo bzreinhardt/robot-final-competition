@@ -35,10 +35,8 @@ elseif nargin == 3
 else
     error('wrong number of arguments');
 end
-% compensate for measurement delay, assuming robot has kept moving in the same manner
-% since the measurement
-d = (delay+1)*d;
-phi = (delay+1)*phi;
+
+d = (delay+1)
 
 %assume that the wheels both turn at the same rate during the time step.
 %This causes the robot to drive along an arc with radius r

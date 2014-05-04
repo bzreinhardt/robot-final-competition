@@ -1,4 +1,4 @@
-function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims)
+function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX)
 % : Find the weight of a state particle by comparing the sensor
 % measurements expected from that particle with actual measurements
 % 
@@ -15,6 +15,8 @@ function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims)
 %       Q_sonar - Variance of a single sonar sensor
 %       Q_AR - covariance matrix for X/Y measurements of a AR tag
 %       %mapLims - corners of a square map [xmin,ymin,xmax,ymax}
+%      lastGoodX - last 'good' pose guess the robot got - will be 0
+%      until the robot has localized and then will be [x;y;theta]
 %       
 % 
 %   OUTPUTS
@@ -30,6 +32,10 @@ if (X(1)<mapLims(1)|| X(2) < mapLims(2) || X(1) >mapLims(3)||X(2)>mapLims(4))
     w = 0;
     return
 end
+%assume the robot won't be travelling more than half a meter between
+%measurements
+maxTravelDist = 0.5;
+
 Q_good = [];
 expectMeas = feval(h,X,ARs,sonars);
 for i = 1:length(sonars)
@@ -56,5 +62,10 @@ try
 catch err
     disp('problem with your weight');
 end
+
+if lastGoodX ~= 0
+    if findDist(lastGoodX(1:2),X(1:2)) > maxTravelDist
+        w = w*0.1;
+    end
 
 end

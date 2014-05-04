@@ -156,6 +156,7 @@ wayPtsVisited = [];
 optWallFlag = 0;
 truthSize = 0;
 bumped = 0; % keep track of whether you bumped a wall
+lastGoodX = 0; %keep track of the last good measurement AFTER you have initialized yourself
 
 %% Draw initial stuff
 if isLab == 1
@@ -212,19 +213,19 @@ while toc < maxTime
      end
     end
     %% READ & STORE SENSOR DATA
-    toc 
-    disp('start reading data');
+    t1 = toc; 
+    
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    toc
-    disp('stop reading data');
+    t2 = toc;
+%    disp('reading data took'); disp(t2-t1);
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
         %Test for localizing
         %     %REMOVE THIS
-         X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
-         localized = 1;
-       initLoc = 1;
+%          X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%          localized = 1;
+%        initLoc = 1;
         %change me
         X_in = X_0;
         mu = mean(X_0,2);
@@ -247,6 +248,7 @@ while toc < maxTime
     end
     %% Condition data
     u = dataStore.odometry(end,2:3)';
+    
     %comment this out for real competition!
     if size(dataStore.truthPose,2) == truthSize
         %if truthPose didn't update, update it yourself with odom data
@@ -256,6 +258,7 @@ while toc < maxTime
         truthSize = size(dataStore.truthPose,2);
     end
     X_true = dataStore.truthPose(end,2:4)';
+    
     %keep track of approximate distance turned
     distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
@@ -270,10 +273,11 @@ while toc < maxTime
     
     
     %% RUN PARTICLE FILTER
+    t1 = toc;
     %update h to the current map
     h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
     %update p_z to the current sensors
-    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims);
+    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX);
     
     [X_out,w_out] =  particleFilter(X_in,measurements,u,...
         g,p_z,normNoise,resampleFcn);
@@ -282,8 +286,10 @@ while toc < maxTime
         %if you haven't switched resampling on, compound the weights
         w_out = w_out.*dataStore.particles(end,:);
     end
-    X_PF = genGuess(X_out,w_out);
+    X_PF = genGuess(X_out,w_out,initLoc);
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
+    t2 = toc;
+    disp('PF took'); disp(t2-t1);
     %% RUN KALMAN FILTER
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
@@ -400,7 +406,9 @@ while toc < maxTime
     else
         goodMeas = goodMeas + 1;
         badMeas = 0;
-        lastGoodMeas = X;
+        if initLoc == 1
+        lastGoodX = X;
+        end
         guessCol = 'g';
     end
     disp(localized)

@@ -98,9 +98,8 @@ maxBadMeas = 5; %max number of bad measurements before losing localization
 mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
     max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
 
-M = 50;
 
-angles = [0:pi/4:(2*pi-pi/4)];
+angles = [0:pi/5:(2*pi-pi/5)];
 X_0 = initializePF(waypoints,angles);
 
 %number of particles
@@ -157,7 +156,9 @@ wayPtsVisited = [];
 optWallFlag = 0;
 truthSize = 0;
 bumped = 0; % keep track of whether you bumped a wall
+lastGoodX = 0; %keep track of the last good measurement AFTER you have initialized yourself
 
+%% Draw initial stuff
 if isLab == 1
 figure(1);clf; 
 wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints) 
@@ -212,19 +213,19 @@ while toc < maxTime
      end
     end
     %% READ & STORE SENSOR DATA
-    toc 
-    disp('start reading data');
+    t1 = toc; 
+    
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    toc
-    disp('stop reading data');
+    t2 = toc;
+%    disp('reading data took'); disp(t2-t1);
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
         %Test for localizing
         %     %REMOVE THIS
-         X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
-         localized = 1;
-       initLoc = 1;
+%          X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%          localized = 1;
+%        initLoc = 1;
         %change me
         X_in = X_0;
         mu = mean(X_0,2);
@@ -247,6 +248,7 @@ while toc < maxTime
     end
     %% Condition data
     u = dataStore.odometry(end,2:3)';
+    
     %comment this out for real competition!
     if size(dataStore.truthPose,2) == truthSize
         %if truthPose didn't update, update it yourself with odom data
@@ -256,6 +258,7 @@ while toc < maxTime
         truthSize = size(dataStore.truthPose,2);
     end
     X_true = dataStore.truthPose(end,2:4)';
+    
     %keep track of approximate distance turned
     distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
@@ -270,6 +273,7 @@ while toc < maxTime
     
     
     %% RUN PARTICLE FILTER
+    t1 = toc;
     %update h to the current map
     h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
     %update p_z to the current sensors
@@ -282,8 +286,10 @@ while toc < maxTime
         %if you haven't switched resampling on, compound the weights
         w_out = w_out.*dataStore.particles(end,:);
     end
-    X_PF = genGuess(X_out,w_out);
+    X_PF = genGuess(X_out,w_out,initLoc);
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
+    t2 = toc;
+    disp('PF took'); disp(t2-t1);
     %% RUN KALMAN FILTER
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
@@ -400,7 +406,9 @@ while toc < maxTime
     else
         goodMeas = goodMeas + 1;
         badMeas = 0;
-        lastGoodMeas = X;
+        if initLoc == 1
+        lastGoodX = X;
+        end
         guessCol = 'g';
     end
     disp(localized)
@@ -530,19 +538,20 @@ if localized == 0
         disp('Unolocalized but can see a beacon');
         bumped = 0;
     elseif bumped > 0 && isempty(beacon)
-        disp('responding to bump. cant see a beacon.');
+        disp('unlocalized responding to bump. cant see a beacon.');
         if bumped < 4
             cmdV = -slowV;
             cmdW = 0;
             bumped = bumped + 1;
-        elseif bumped >= 4 && bumped < 8
+        elseif bumped >= 4 && bumped < 7
             cmdV = 0;
             if bumpSide == -pi/2 %turn to the left if bump is on the right
-            cmdW = slowV;
+            cmdW = slowV/2;
             else
-                cmdW = slowV;
+                cmdW = -slowV;
             end
-        elseif bumped >= 8
+            bumped = bumped + 1;
+        elseif bumped >= 7
             bumped = 0;
             cmdV  = 4 * slowV;
             cmdW = 0;
@@ -575,14 +584,15 @@ elseif localized == 1
                 cmdV = -slowV;
                 cmdW = 0;
                 bumped = bumped + 1;
-            elseif bumped >= 4 && bumped < 8
+            elseif bumped >= 4 && bumped < 7
                 cmdV = 0;
                 if bumpSide == -pi/2 %turn to the left if bump is on the right
-                    cmdW = slowV;
+                    cmdW = slowV/2;
                 else
-                    cmdW = slowV;
+                    cmdW = -slowV/2;
                 end
-            elseif bumped >= 8
+                bumped = bumped + 1;
+            elseif bumped >= 7
                 bumped = 0;
                 cmdV  = 4 * slowV;
                 cmdW = 0;
