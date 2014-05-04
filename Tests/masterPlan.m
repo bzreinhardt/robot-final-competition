@@ -70,6 +70,8 @@ noRobotCount = 0;
 % maxTime = 500;  % Max time to allow the program to run (s)
 %check whether you are in the lab or not 
 global isLab;
+global planOn;
+global locOn;
 maxV = 0.3;     % Max allowable forward velocity with no angular 
 wheel2center = 0.13;  
 sonarR = 0.16;
@@ -97,7 +99,7 @@ mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
     max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
 
 
-angles = [0:pi/10:(2*pi-pi/10)];
+angles = [0:pi/5:(2*pi-pi/5)];
 X_0 = initializePF(waypoints,angles);
 
 %number of particles
@@ -153,15 +155,20 @@ wayPtsUnvisited = [ waypoints;ECwaypoints];
 wayPtsVisited = [];
 optWallFlag = 0;
 truthSize = 0;
+bumped = 0; % keep track of whether you bumped a wall
 
+%% Draw initial stuff
 if isLab == 1
 figure(1);clf; 
-wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints)
+wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints) 
+
 xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
 drawnow;
 end
 
+
 %% PLANNING INITIALIZATION KEVIN's STUFF GOES HERE %%
+if planOn ~= 0
 if isLab == 1
     maxV = 0.1;
 else
@@ -188,10 +195,13 @@ closeEnough = 0.2;
 gotopt = 1;
 stop = 0;
 dontMove = 0;
-
+end
 
 %% Main loop
 while toc < maxTime
+    %% Kevin Code 
+    if planOn ~= 0
+        
      if (isempty(unvisitedWPs) && isempty(optWalls))
          %if you've visited all the waypoints and found all the walls, stop
         SetFwdVelAngVelCreate(CreatePort,0,0);
@@ -199,10 +209,14 @@ while toc < maxTime
         BeepRoomba(CreatePort);
         BeepRoomba(CreatePort);
          break
+     end
     end
     %% READ & STORE SENSOR DATA
+    toc 
+    disp('start reading data');
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    
+    toc
+    disp('stop reading data');
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
@@ -217,10 +231,13 @@ while toc < maxTime
         sig = sig0;
     else
         X_in = X_out;
-        
-        delete(guess);
+        if isLab == 1;
+        figure(1);
+        end
+        delete(guess); 
        
         delete(PFGuess);
+       
         
   %      delete(parts);
         if isLab == 1
@@ -390,6 +407,7 @@ while toc < maxTime
     
     
    %% PLANNING STUFF - KEVIN's CODE GOES HERE
+   if planOn ~= 0
    currLoc = X;
    
    if (wpOrWall == 1) || (wpOrWall == 2)
@@ -410,25 +428,30 @@ while toc < maxTime
         gotopt = 1;
         dontMove = 0;
     end
-   
+   end
     %% Draw stuff
+    if isLab == 1
     figure(1);
+    end
+     
     col = 'k';
 
-    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3)));
+    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3))); hold on
 
     guess = quiver(X(1),X(2),cos(X(3)),sin(X(3)));
    % parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
 %   set(muGuess,'color','k');
     set(guess,'color',guessCol);
     set(PFGuess,'color','b');
+    
     if isLab == 1
         xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
         robot = circle(X_true(1:2),sonarR,10);
         truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
         set(truth,'color','g');
-
     end
+
+   
     %disp(sig);
     drawnow;
     
@@ -474,16 +497,28 @@ while toc < maxTime
 %         delete(guess);
 %         break;
 %     else
+%IF you hit a wall, set bumped flag to 1
+if max(dataStore.bump(end,2:end)) == 1
+    bumped = 1;
+    if dataStore.bump(end,2) == 1
+        bumpSide = -pi/2;
+    elseif dataStore.bump(end,3) == 1
+        bumpSide = pi/2;
+    else
+        bumpSide = 0;
+    end
+    disp('hit a wall')
+end
 if localized == 0
     % LOCALIZATION CODE - BEN'sSTUFF
     %turn until you see a beacon
-    if isempty(beacon) && distTurned < 2*pi
+    if isempty(beacon) && distTurned < 2*pi && bumped == 0
     cmdV = 0;
     cmdW = slowV/wheel2center;
     
     
     disp('unlocalized and cannot see a beacon - disturned < 2pi');
-    elseif isempty(beacon) && distTurned >2*pi
+    elseif isempty(beacon) && distTurned >2*pi && bumped == 0
         %move randomly?
         cmdV = 4 * slowV;
         cmdW = 0;
@@ -493,18 +528,71 @@ if localized == 0
         cmdV = 0;
         cmdW = 0;
         disp('Unolocalized but can see a beacon');
+        bumped = 0;
+    elseif bumped > 0 && isempty(beacon)
+        disp('unlocalized responding to bump. cant see a beacon.');
+        if bumped < 4
+            cmdV = -slowV;
+            cmdW = 0;
+            bumped = bumped + 1;
+        elseif bumped >= 4 && bumped < 7
+            cmdV = 0;
+            if bumpSide == -pi/2 %turn to the left if bump is on the right
+            cmdW = slowV/2;
+            else
+                cmdW = -slowV;
+            end
+            bumped = bumped + 1;
+        elseif bumped >= 7
+            bumped = 0;
+            cmdV  = 4 * slowV;
+            cmdW = 0;
+        end
+        
     end
     
-     if max(dataStore.bump(end,2:end)) == 1
-        %if you bump into a wall, back up
-        travelDist(CreatePort, slowV, -0.2);
-        turnAngle(CreatePort, slowV, 30);
-        disp('hit a wall');
-     else
-    SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
-    end
+    
 elseif localized == 1
+    if planOn == 0
+        %do backup bump
+        if max(dataStore.bump(end,2:end)) == 1
+            bumped = 1;
+            if dataStore.bump(end,2) == 1
+                bumpSide = -pi/2;
+            elseif dataStore.bump(end,3) == 1
+                bumpSide = pi/2;
+            else
+                bumpSide = 0;
+            end
+            disp('hit a wall')
+        end
+        if bumped == 0
+            cmdV = 2*slowV;
+            cmdW = 0;
+            disp('moving while localized');
+        elseif bumped > 0
+            disp('responding to bump while localized');
+            if bumped < 4
+                cmdV = -slowV;
+                cmdW = 0;
+                bumped = bumped + 1;
+            elseif bumped >= 4 && bumped < 7
+                cmdV = 0;
+                if bumpSide == -pi/2 %turn to the left if bump is on the right
+                    cmdW = slowV/2;
+                else
+                    cmdW = -slowV/2;
+                end
+                bumped = bumped + 1;
+            elseif bumped >= 7
+                bumped = 0;
+                cmdV  = 4 * slowV;
+                cmdW = 0;
+            end
+        end
+        
     % CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
+    elseif planOn ~=0
         if stop == 0
             currPose = [toc;X]';
             
@@ -554,9 +642,14 @@ elseif localized == 1
         travelDist(CreatePort, slowV, -0.2);
         turnAngle(CreatePort, slowV, 30);
         disp('hit a wall');
+          end
     end
 end
-
+ if noRobotCount >= 3
+        SetFwdVelAngVelCreate(CreatePort, 0,0);
+ else
+     SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
+ end
     % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it
@@ -583,4 +676,10 @@ numBeacons = size(dataStore.beacon,1)-beaconSize;
 beacon = dataStore.beacon(end-numBeacons+1:end,2:end);
 end
 
+    function [cmdV,cmdW,done] = backupBump(turnDist, moveDist)
+    end
+
+end
+
+function [cmdV, cmdW,bumped] = bumpResponse(bumped)
 end

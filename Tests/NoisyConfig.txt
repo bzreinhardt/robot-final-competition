@@ -1,0 +1,9 @@
+% SensorName NoiseMean NoiseStandardDev
+wall 0.00000 0.00000
+cliff 0.00000 0.00000
+odometry 0.01000 0.01000
+sonar 0.05000 0.10000
+lidar 0.00000 0.00000
+camera -0.01000 0.05000
+
+com_delay 0.1

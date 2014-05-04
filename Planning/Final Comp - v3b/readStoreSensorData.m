@@ -51,19 +51,19 @@ if nargin<7, BeaconMode = 1; end
         disp('Error retrieving or saving odometry data.');
     end
     
-    % read lidar data
-    try
-        if isa(CreatePort,'CreateRobot')
-            % Read lidar data from Simulator
-            lidarScan = LidarSensorCreate(CreatePort);
-            dataStore.lidar = [dataStore.lidar ; toc lidarScan];
-        else
-            % Lidar data is not available from the iRobot Create
-        end
-    catch
-        disp('Error retrieving or saving lidar data.');
-    end
-    
+%     % read lidar data
+%     try
+%         if isa(CreatePort,'CreateRobot')
+%             % Read lidar data from Simulator
+%             lidarScan = LidarSensorCreate(CreatePort);
+%             dataStore.lidar = [dataStore.lidar ; toc lidarScan];
+%         else
+%             % Lidar data is not available from the iRobot Create
+%         end
+%     catch
+%         disp('Error retrieving or saving lidar data.');
+%     end
+%     
     % read bump data
     try
         [BumpRight BumpLeft DropRight DropLeft DropCaster BumpFront] = ...

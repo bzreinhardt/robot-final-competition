@@ -108,7 +108,8 @@ global isLab
 if (isLab == 1)
     DT = DelaunayTri(x,y,constraints); % DT = delaunayTriangulation(x,y,constraints);
 else
-DT = delaunayTriangulation(x,y,constraints);
+    
+        DT = delaunayTriangulation(x,y,constraints);
 end
 % figure(1);clf;triplot(DT); hold on
 %% Find the triangles that are actually in shapes
@@ -236,7 +237,7 @@ start = [currPose(1,1) currPose(2,1)];
 % goal = [2.2 2.1]; % [1 -.5]; % [4 -2.5];
 RM = [safeCenters safeAdjMrx];
 
-figure(2)
+%figure(2)
 % [path pDist PRM] = findPath( verticies,RM,start,goal,maxX,minX,maxY,minY);
 % shortestPath = path;
 % pathDist = pDist;
@@ -344,11 +345,11 @@ if (idx == 1)
     wpOrWall = 1;
 end
     
-    hold on
-    plot(shortestPath(:,2),shortestPath(:,3),'g-','LineWidth',3);
-    hold off
-    time2 = toc;
-    time = time2 - time1;
+%     hold on
+%     plot(shortestPath(:,2),shortestPath(:,3),'g-','LineWidth',3);
+%     hold off
+%     time2 = toc;
+%     time = time2 - time1;
 
 end
 
