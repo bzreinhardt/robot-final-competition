@@ -47,15 +47,17 @@ end
 % workspace even if the program is stopped
 global dataStore;
 
+
+
+
 % initialize datalog struct (customize according to needs)
-dataStore = struct('truthPose', [],...
-                   'odometry', [], ...
+dataStore = struct('odometry', [], ...
                    'lidar', [], ...
                    'sonar', [], ...
                    'bump', [], ...
                    'beacon', [],...
                    'ARs',[], 'sonars',[],'measurements',[],...
-                   'predictMeasTrue',[],'predictMeasGuess',[],...
+                   'predictMeasGuess',[],...
                    'particles',[],'pfvar',[],...
                    'X',[],'mu',[],'sig',[]);
 
@@ -79,12 +81,9 @@ cameraR = 0;
 robotRad = sonarR;
 %tunable Parameters
 closeEnough = sonarR;
-if isLab == 0
-    load('Map2 - Path1.mat');
-    path = shortestPath(:,2:3);
-end
+
 if isLab == 1
-    load('ExampleLabMap_2014.mat');
+    load('ExampleLabMap_2014_2.mat');
     cameraR = 0.13;
     sonarR = 0.15;
 else
@@ -99,17 +98,18 @@ mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
     max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
 
 
-angles = [0:pi/5:(2*pi-pi/5)];
+angles = [0:pi/10:(2*pi-pi/10)];
 X_0 = initializePF(waypoints,angles);
 
 %number of particles
 M = size(X_0,2);
 
-Q_sonar_low = 0.1;
-Q_sonar_high = 0.5;
+Q_sonar_low = 2;
+Q_sonar_high = 2;
 Q_sonar = Q_sonar_low;
-cov_AR = 0.01;
-R = 0.01*eye(3);
+cov_AR = 0.05;
+R = [0.001 0 0; 0 0.001 0; 0 0 0.5];
+R_postInit = 0.01*eye(3);
 theta = 0.1;
 %rotM = [cos(theta) -sin(theta);sin(theta) cos(theta)];
 Q_AR = cov_AR*eye(2);
@@ -149,7 +149,7 @@ goodMeas = 0;
 beaconSeenIndex = 0;
 localized = 0; %keep track of whether you are confident of your position
 initLoc = 0; %keep track of whether you have figured out where you are initially
-resamp = 0;  %keep track of whether you should resample
+resamp = 5;  %keep track of whether you should resample
 checkWall = -1; %keep track of what wall needs to be checked based on current position
 % waypoints left to visit
 wayPtsUnvisited = [ waypoints;ECwaypoints];
@@ -159,15 +159,16 @@ optWallFlag = 0;
 truthSize = 0;
 bumped = 0; % keep track of whether you bumped a wall
 lastGoodX = 0; %keep track of the last good measurement AFTER you have initialized yourself
-
+wallEvent = 0;
 %% Draw initial stuff
-if isLab == 1
-figure(1);clf; 
-wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints) 
+%if isLab == 1
+figure(10);clf; 
+wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints); hold on
 
 xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
 drawnow;
-end
+hold off
+%end
 
 
 %% PLANNING INITIALIZATION KEVIN's STUFF GOES HERE %%
@@ -215,11 +216,11 @@ while toc < maxTime
      end
     end
     %% READ & STORE SENSOR DATA
-    t1 = toc; 
     
-    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    t2 = toc;
-  disp('reading data took'); disp(t2-t1);
+    disp('start reading data')
+    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,0,dataStore);
+    
+    disp('read data');
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
@@ -232,65 +233,83 @@ while toc < maxTime
         X_in = X_0;
         mu = mean(X_0,2);
         sig = sig0;
+        t_odom = dataStore.odometry(end,1);
     else
+        t_odom = dataStore.odometry(end-1,1);
         X_in = X_out;
-        if isLab == 1;
-        figure(1);
-        end
+   %     if isLab == 1;
+        figure(10); hold on;
+   %     end
         delete(guess); 
        
         delete(PFGuess);
        
         
   %      delete(parts);
-        if isLab == 1
-            delete(robot);
-            delete(truth);
-        end
+   %     if isLab == 1
+%             delete(robot);
+%             delete(truth); 
+            hold off;
+   %     end
     end
     %% Condition data
     u = dataStore.odometry(end,2:3)';
     
     %comment this out for real competition!
-    if size(dataStore.truthPose,2) == truthSize
-        %if truthPose didn't update, update it yourself with odom data
-        newTrue = feval(g,dataStore.truthPose(end,2:4)',u);
-        dataStore.truthPose = [dataStore.truthPose;[toc, newTrue']];
-    else
-        truthSize = size(dataStore.truthPose,2);
-    end
-    X_true = dataStore.truthPose(end,2:4)';
+%     if size(dataStore.truthPose,2) == truthSize
+%         %if truthPose didn't update, update it yourself with odom data
+%         newTrue = feval(g,dataStore.truthPose(end,2:4)',u);
+%         dataStore.truthPose = [dataStore.truthPose;[toc, newTrue']];
+%     else
+%         truthSize = size(dataStore.truthPose,2);
+%     end
+%     X_true = dataStore.truthPose(end,2:4)';
     
     %keep track of approximate distance turned
     distTurned = distTurned + dataStore.odometry(end,3);
     % get relevant data
     [sonar,beacon, bump] = newData(dataStore,beaconSize);
-    beaconSize = beaconSize + length(beacon);
+    if ~isempty(beacon)
+        beaconSeen = 1; 
+    end
+    
     
     %put data in comparable form
     [measurements, sonars, ARs ] = conditionSensors(sonar, beacon);
     %predict measurement
-    predictMeasTrue = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
-        map,beaconLoc,cameraR,sonarR);
+%     predictMeasTrue = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
+%         walls,beaconLoc,cameraR,sonarR);
+    
+     if max(dataStore.bump(end,2:end)) == 1
+        bumped = 1;
+        if dataStore.bump(end,2) == 1
+            bumpSide = -pi/2;
+        elseif dataStore.bump(end,3) == 1
+            bumpSide = pi/2;
+        else
+            bumpSide = 0;
+        end
+        disp('hit a wall')
+    end
     
     
     %% RUN PARTICLE FILTER
     
     %update h to the current map
-    h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
+    h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,walls,beaconLoc,cameraR,sonarR);
     %update p_z to the current sensors
-    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX);
-    t1 = toc;
+    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX,walls,initLoc,waypoints);
+   
     [X_out,w_out] =  particleFilter(X_in,measurements,u,...
         g,p_z,normNoise,resampleFcn);
-     t2 = toc;
-    disp('PF took'); disp(t2-t1);
+
     %prune the output
     if beaconSeen == 0 && i > 1
         %if you haven't switched resampling on, compound the weights
         w_out = w_out.*dataStore.particles(end,:);
     end
     X_PF = genGuess(X_out,w_out,initLoc);
+     
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
    
     %% RUN KALMAN FILTER
@@ -316,7 +335,14 @@ while toc < maxTime
             Q_sonar = Q_sonar_low;
             disp('resetting sonar Q');
         end
+        if i == 1
          X = mu;
+        elseif bumped ~= 1
+            dt = t_cmd-t_odom;
+            X = propigate(mu,cmdW,cmdV,dt,g);
+        elseif bumped == 1
+            X = X_PF;
+        end
 %         if wallEvent == 2 || optWallFlag == 2
 %             %a missing wall will screw up the EKF, so if you suspect a wall
 %             %go completely on odometry
@@ -344,6 +370,7 @@ while toc < maxTime
         if wayPtAlert == 1
             %do stuff - replan, beep etc
             disp('WAYPOINT!');
+            figure(10);
             plot(wayPtsVisited(end,1),wayPtsVisited(end,2),'gx');
             wayPtAlert = 0;
             if isLab
@@ -360,28 +387,60 @@ while toc < maxTime
  %% LOCALIZATION ALGORITHM - Determine confidence   
     
     %switch resampling function when you see a beacon for the first time
-    if beaconSize > 0 && beaconSeen == 0
+   % if beaconSize > 0 && beaconSeen == 0
+   if localized == 1
         resampleFcn = @lowVarSample;
-        beaconSeen = 1; 
+        
         %mark when you first see a beacon
         beaconSeenIndex = i;
         
     end
     %if you see a beacon and aren't localized resample  
-    if numel(ARs) > 0 && localized == 0 
-        resamp = resamp - 1;
-        if resamp < 1
-            beaconNum = ARs(1);
-            G_beacon = beaconLoc(beaconLoc(:,1) == beaconNum,2:3)';
-            C_beacon = measurements(length(sonars)+1:length(sonars)+2)';
-            X_out = beaconRelocalize(G_beacon,C_beacon,M,mapLims,cameraR);
-            %tunable parameter - number of steps to wait before resampling
-            resamp = 10;
-        end
-    end
+%     if numel(ARs) > 0 && localized == 0 
+%         resamp = resamp - 1;
+%         if resamp < 1
+%             beaconNum = ARs(1);
+%             G_beacon = beaconLoc(beaconLoc(:,1) == beaconNum,2:3)';
+%             C_beacon = measurements(length(sonars)+1:length(sonars)+2)';
+%             X_out = beaconRelocalize(G_beacon,C_beacon,M,mapLims,cameraR);
+%             %tunable parameter - number of steps to wait before resampling
+%             resamp = 7;
+%         end
+%     end
     % determine that you're localized if you've got 3 good measurements in
     % a row
-    if goodMeas >= 3
+    
+    
+    %react to bad measurements
+    if locEvent == 1
+        %increment bad measurement counter if you're not in a possible
+        %optional wall situation
+        if optWallFlag ~=2 && wallEvent ~= 2
+            badMeas = badMeas +1;
+            goodMeas = 0;
+        end
+        
+        %three bad measurements in a row means you're lost
+        if badMeas > maxBadMeas && initLoc == 1
+            localized = 0;
+            if badMeas == maxBadMeas + 1
+            disp('Lost myself initially');
+            distTurned = 0;
+            else
+                disp('still lost');
+            end
+        end
+        guessCol = 'r';
+        
+    else
+        goodMeas = goodMeas + 1
+        badMeas = 0;
+        if initLoc == 1
+        lastGoodX = X;
+        end
+        guessCol = 'g';
+    end
+    if goodMeas >= 2
         if localized == 0 && beaconSeen == 1
             disp('found myself');
             mu = X;
@@ -394,32 +453,6 @@ while toc < maxTime
         end
        
     end
-    
-    %react to bad measurements
-    if locEvent == 1
-        %increment bad measurement counter if you're not in a possible
-        %optional wall situation
-        if optWallFlag ~=2
-            badMeas = badMeas +1;
-            goodMeas = 0;
-        end
-        
-        %three bad measurements in a row means you're lost
-        if badMeas > maxBadMeas && initLoc == 1
-            localized = 0;
-            disp('Lost myself');
-            distTurned = 0;
-        end
-        guessCol = 'r';
-        
-    else
-        goodMeas = goodMeas + 1;
-        badMeas = 0;
-        if initLoc == 1
-        lastGoodX = X;
-        end
-        guessCol = 'g';
-    end
     if localized == 1
         disp('localized')
     elseif localized == 0
@@ -428,36 +461,15 @@ while toc < maxTime
     
     
     %% PLANNING STUFF - KEVIN's CODE GOES HERE
-    if planOn ~= 0
-        currLoc = X;
-        
-        if (wpOrWall == 1) || (wpOrWall == 2)
-            [path pathDist relocalize removeIdx wpOrWall] = planPath(walls,optWalls,wpOrWall,currLoc,unvisitedWPs,visitedWPs );
-            if (relocalize == 1)
-                continue
-            end
-            if (isnan(path))
-                continue
-            end
-            if (wpOrWall == 1)
-                wpOrWall = 3;
-            elseif (wpOrWall == 2)
-                wpOrWall = 4;
-            end
-            waypoints = path(2:end,2:3);
-            m = size(waypoints, 1);
-            gotopt = 1;
-            dontMove = 0;
-        end
-    end
+   
     %% Draw stuff
-    if isLab == 1
-        figure(1);
-    end
+    
+        figure(10);
+    hold on
     
     col = 'k';
     
-    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3))); hold on
+    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3))); 
     
     guess = quiver(X(1),X(2),cos(X(3)),sin(X(3)));
     % parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
@@ -465,17 +477,17 @@ while toc < maxTime
     set(guess,'color',guessCol);
     set(PFGuess,'color','b');
     
-    if isLab == 1
+    %if isLab == 1
         xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
-        robot = circle(X_true(1:2),sonarR,10);
-        truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
-        set(truth,'color','g');
-    end
+%         robot = circle(X_walls(1:2),sonarR,10);
+%         truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
+%         set(truth,'color','y');
+    %end
     
     
     %disp(sig);
     drawnow;
-    
+    hold off
     
     
     %% store stuff
@@ -494,9 +506,9 @@ while toc < maxTime
     %TODO pad measurements with zeros so you can store it.
     measurements = padarray(measurements, [0 13-size(measurements,2)],'post');
     dataStore.measurements = [dataStore.measurements;measurements];
-    predictMeasTrue = padarray(predictMeasTrue, [0 13-size(predictMeasTrue,2)],'post');
-    dataStore.predictMeasTrue = [dataStore.predictMeasTrue; predictMeasTrue];
-    
+%     predictMeasTrue = padarray(predictMeasTrue, [0 13-size(predictMeasTrue,2)],'post');
+%     dataStore.predictMeasTrue = [dataStore.predictMeasTrue; predictMeasTrue];
+%     
     predictMeasGuess = padarray(predictMeasGuess, [0 13-size(predictMeasGuess,2)],'post');
     dataStore.predictMeasGuess = [dataStore.predictMeasGuess; predictMeasGuess];
     %make sure that beacon datastore keeps up with everybody else
@@ -519,17 +531,7 @@ while toc < maxTime
     %         break;
     %     else
     %IF you hit a wall, set bumped flag to 1
-    if max(dataStore.bump(end,2:end)) == 1
-        bumped = 1;
-        if dataStore.bump(end,2) == 1
-            bumpSide = -pi/2;
-        elseif dataStore.bump(end,3) == 1
-            bumpSide = pi/2;
-        else
-            bumpSide = 0;
-        end
-        disp('hit a wall')
-    end
+   
     if localized == 0
         % LOCALIZATION CODE - BEN'sSTUFF
         %turn until you see a beacon
@@ -614,6 +616,29 @@ while toc < maxTime
             
             % CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
         elseif planOn ~=0
+              
+        currLoc = X;
+        
+        if (wpOrWall == 1) || (wpOrWall == 2)
+            [path pathDist relocalize removeIdx wpOrWall] = planPath(walls,optWalls,wpOrWall,currLoc,unvisitedWPs,visitedWPs );
+            if (relocalize == 1)
+                continue
+            end
+            if (isnan(path))
+                continue
+            end
+            if (wpOrWall == 1)
+                wpOrWall = 3;
+            elseif (wpOrWall == 2)
+                wpOrWall = 4;
+            end
+            waypoints = path(2:end,2:3);
+            m = size(waypoints, 1);
+            gotopt = 1;
+            dontMove = 0;
+        end
+   
+    
             if stop == 0
                 currPose = [toc;X]';
                 
@@ -629,6 +654,54 @@ while toc < maxTime
                     %% here we handle the case when the closest point goes through an optional wall
                     %
                     %%
+             elseif ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                %% here we handle the case when the closest point goes through an optional wall
+                bumped = 0;
+                if (gotopt == 1)
+                elseif (size(optWalls,1) >= 1)
+                    isectIdx = 0;
+                    for k = 1:size(optWalls,1)
+                        ax1 = waypoints(gotopt,1);
+                        ax2 = waypoints((gotopt - 1),1);
+                        ay1 = waypoints(gotopt,2);
+                        ay2 = waypoints((gotopt - 1),2);
+                        wx1 = optWalls(k,1);
+                        wy1 = optWalls(k,2);
+                        wx2 = optWalls(k,3);
+                        wy2 = optWalls(k,4);
+                        [isect x y ua] = intersectPoint(ax1,ay1,ax2,ay2,wx1,wy1,wx2,wy2);
+                        if (isect == true)
+                            isectIdx = k;
+                            break
+                        end
+                    end
+                    if (isectIdx ~= 0)
+                        SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                        dontMove = 1;
+                        walls = [walls; optWalls(isectIdx,:)];
+                        optWalls(isectIdx,:) = [];
+                        wpOrWall = 1;
+                    end 
+                else
+                    
+                    if bumped < 4
+                    cmdV = -slowV;
+                    cmdW = 0;
+                    bumped = bumped + 1;
+                elseif bumped >= 4 && bumped < 7
+                    cmdV = 0;
+                    if bumpSide == -pi/2 %turn to the left if bump is on the right
+                        cmdW = slowV/2;
+                    else
+                        cmdW = -slowV/2;
+                    end
+                    bumped = bumped + 1;
+                elseif bumped >= 7
+                    bumped = 0;
+                    cmdV  = 4 * slowV;
+                    cmdW = 0;
+                end
+                end
                 elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
                     if gotopt < m
                         gotopt = gotopt + 1;
@@ -662,12 +735,19 @@ while toc < maxTime
             end
         end
     end
-    if noRobotCount >= 3
-        SetFwdVelAngVelCreate(CreatePort, 0,0);
-    else
+    
+   
         [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
+        if abs(cmdW) > 0.4
+            cmdWNew = 0.4*(cmdW/abs(cmdW));
+            cmdVNew = cmdV*(cmdWNew/cmdW);
+            cmdW = cmdWNew;
+            cmdV = cmdVNew;
+        end
+       
         SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
-    end
+    
+    t_cmd = toc;
     % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it

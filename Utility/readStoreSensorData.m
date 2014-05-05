@@ -26,20 +26,20 @@ function [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,Beaco
 if nargin<7, BeaconMode = 1; end
 
     % read truth pose (from overhead localization system)
-    try
-        [px, py, pt] = OverheadLocalizationCreate(tagNum);
-        if (px == 0 && py == 0 && pt == 0 && ~isa(tagNum,'CreateRobot'))
-            disp('Overhead localization lost the robot!')
-            noRobotCount = noRobotCount + 1;
-        else
-            poseX = px; poseY = py; poseTheta = pt;
-            dataStore.truthPose = [dataStore.truthPose ; ...
-                               toc poseX poseY poseTheta];
-            noRobotCount = 0;
-        end
-    catch
-        disp('Error retrieving or saving overhead localization data.');
-    end
+%     try
+%         [px, py, pt] = OverheadLocalizationCreate(tagNum);
+%         if (px == 0 && py == 0 && pt == 0 && ~isa(tagNum,'CreateRobot'))
+%             disp('Overhead localization lost the robot!')
+%             noRobotCount = noRobotCount + 1;
+%         else
+%             poseX = px; poseY = py; poseTheta = pt;
+%             dataStore.truthPose = [dataStore.truthPose ; ...
+%                                toc poseX poseY poseTheta];
+%             noRobotCount = 0;
+%         end
+%     catch
+%         disp('Error retrieving or saving overhead localization data.');
+%     end
     
     % read odometry distance & angle
     try

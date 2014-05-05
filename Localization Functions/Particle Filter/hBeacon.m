@@ -42,7 +42,7 @@ C_beacons = R_Q_G*(beacon(:,2:3)'-pose(1:2))-[robotRad;0];
 exp = C_beacons;
 for j = 1:size(beacon,1)
 if isLab == 1
-            exp(j*2,:) = -1*exp(j*2,:);
+           exp(j*2,:) =-1* exp(j*2,:);
 end
 end
 %camera position in the global frame

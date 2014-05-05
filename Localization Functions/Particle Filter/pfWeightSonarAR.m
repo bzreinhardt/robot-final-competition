@@ -1,4 +1,4 @@
-function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX)
+function [w] = pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX,map,initLoc,wayPoints)
 % : Find the weight of a state particle by comparing the sensor
 % measurements expected from that particle with actual measurements
 % 
@@ -57,15 +57,32 @@ end
 if size(z,2) ~= size(expectMeas,2)
     warning('uh oh');
 end
+%weight x values of beacon more
+
 try
  w = mvnpdf(z,expectMeas,Q_good);
 catch err
     disp('problem with your weight');
 end
-
+%make it so that if the predicted position cant see a beacon you can see,
+% weight it low
+if ~isempty(ARs) && expectMeas(numel(sonars)+1) == 100
+    w = w*0.01;
+end
+%make it so you can't jump too far from a good measurement
 if lastGoodX ~= 0
     if findDist(lastGoodX(1:2),X(1:2)) > maxTravelDist
-        w = w*0.1;
+        w = w*0.01;
     end
+    %make it so you can't jump through a wall
+    for i = 1:size(map,1)
+        [isect,x,y,ua]= intersectPoint(X(1),X(2),lastGoodX(1),lastGoodX(2),...
+            map(i,1),map(i,2),map(i,3),map(i,4));
+        if isect == 1
+            w = w*0.01;
+        end
+    end
+end
 
 end
+

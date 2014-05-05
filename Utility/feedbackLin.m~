@@ -13,28 +13,11 @@ if epsilon == 0
         w = 0;
         %otherwise turn slowly
     else
-        theta2 = mod(2*pi+atan2(v_y,v_x),2*pi);
-        v = 0;
-        if theta2 >= theta
-            if theta2 - theta <=pi
-                %turn left
-                w = norm([v_x;v_y]);
-            else
-                %turn right
-                w = -norm([v_x;v_y]);
-            end
-        else
-            if theta - theta2 <= pi
-                %turn right
-                w = -norm([v_x;v_y]);
-            else
-                %turn left
-                w = norm([v_x;v_y]);
-            end
-            
-        end
+        %if theta2 (desired heading) - theta1 (current heading) < pi turn
+        %left else turn right
+        if mod(2*pi+atan2(v_y,v_x),2*pi)-theta < theta
     end
-        
+    
 else
     
     

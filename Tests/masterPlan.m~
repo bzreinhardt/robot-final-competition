@@ -47,6 +47,9 @@ end
 % workspace even if the program is stopped
 global dataStore;
 
+
+
+
 % initialize datalog struct (customize according to needs)
 dataStore = struct('truthPose', [],...
                    'odometry', [], ...
@@ -79,10 +82,7 @@ cameraR = 0;
 robotRad = sonarR;
 %tunable Parameters
 closeEnough = sonarR;
-if isLab == 0
-    load('Map2 - Path1.mat');
-    path = shortestPath(:,2:3);
-end
+
 if isLab == 1
     load('ExampleLabMap_2014.mat');
     cameraR = 0.13;
@@ -90,7 +90,7 @@ if isLab == 1
 else
     load('ExampleMap2_2014.mat');
 end
-slowV = 0.05;
+slowV = 0.1;
 %TODO load covariance matrix
 maxBadMeas = 5; %max number of bad measurements before losing localization
 
@@ -106,7 +106,7 @@ X_0 = initializePF(waypoints,angles);
 M = size(X_0,2);
 
 Q_sonar_low = 0.1;
-Q_sonar_high = 0.5;
+Q_sonar_high = 1;
 Q_sonar = Q_sonar_low;
 cov_AR = 0.01;
 R = 0.01*eye(3);
@@ -161,13 +161,14 @@ bumped = 0; % keep track of whether you bumped a wall
 lastGoodX = 0; %keep track of the last good measurement AFTER you have initialized yourself
 
 %% Draw initial stuff
-if isLab == 1
-figure(1);clf; 
-wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints) 
+%if isLab == 1
+figure(10);clf; 
+wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints); hold on
 
 xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
 drawnow;
-end
+hold off
+%end
 
 
 %% PLANNING INITIALIZATION KEVIN's STUFF GOES HERE %%
@@ -215,11 +216,11 @@ while toc < maxTime
      end
     end
     %% READ & STORE SENSOR DATA
-    t1 = toc; 
+    
     
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
-    t2 = toc;
-%    disp('reading data took'); disp(t2-t1);
+    
+    
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
@@ -232,21 +233,23 @@ while toc < maxTime
         X_in = X_0;
         mu = mean(X_0,2);
         sig = sig0;
+        t_odom = dataStore.odometry(end,1);
     else
+        t_odom = dataStore.odometry(end-1,1);
         X_in = X_out;
-        if isLab == 1;
-        figure(1);
-        end
+   %     if isLab == 1;
+        figure(10); hold on;
+   %     end
         delete(guess); 
        
         delete(PFGuess);
        
         
   %      delete(parts);
-        if isLab == 1
+   %     if isLab == 1
             delete(robot);
-            delete(truth);
-        end
+            delete(truth); hold off;
+   %     end
     end
     %% Condition data
     u = dataStore.odometry(end,2:3)';
@@ -275,23 +278,24 @@ while toc < maxTime
     
     
     %% RUN PARTICLE FILTER
-    t1 = toc;
+    
     %update h to the current map
     h = @(X,ARs,sonars)hBeaconSonar(X,ARs,sonars,map,beaconLoc,cameraR,sonarR);
     %update p_z to the current sensors
-    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX);
-    
+    p_z = @(X,z)pfWeightSonarAR(X,z,h,ARs,sonars,Q_sonar,Q_AR,mapLims,lastGoodX,map);
+   
     [X_out,w_out] =  particleFilter(X_in,measurements,u,...
         g,p_z,normNoise,resampleFcn);
+
     %prune the output
     if beaconSeen == 0 && i > 1
         %if you haven't switched resampling on, compound the weights
         w_out = w_out.*dataStore.particles(end,:);
     end
     X_PF = genGuess(X_out,w_out,initLoc);
+     
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
-    t2 = toc;
-    disp('PF took'); disp(t2-t1);
+   
     %% RUN KALMAN FILTER
     if initLoc == 1
         [mu,sig] = EKF(mu,sig,measurements, u,g,h, G, H, ...
@@ -315,7 +319,12 @@ while toc < maxTime
             Q_sonar = Q_sonar_low;
             disp('resetting sonar Q');
         end
+        if i == 1
          X = mu;
+        else
+            dt = t_cmd-t_odom;
+        X = propigate(mu,cmdW,cmdV,dt,g);
+        end
 %         if wallEvent == 2 || optWallFlag == 2
 %             %a missing wall will screw up the EKF, so if you suspect a wall
 %             %go completely on odometry
@@ -375,7 +384,7 @@ while toc < maxTime
             C_beacon = measurements(length(sonars)+1:length(sonars)+2)';
             X_out = beaconRelocalize(G_beacon,C_beacon,M,mapLims,cameraR);
             %tunable parameter - number of steps to wait before resampling
-            resamp = 10;
+            resamp = 7;
         end
     end
     % determine that you're localized if you've got 3 good measurements in
@@ -398,7 +407,7 @@ while toc < maxTime
     if locEvent == 1
         %increment bad measurement counter if you're not in a possible
         %optional wall situation
-        if optWallFlag ~=2
+        if optWallFlag ~=2 && wallEvent ~= 2
             badMeas = badMeas +1;
             goodMeas = 0;
         end
@@ -406,8 +415,12 @@ while toc < maxTime
         %three bad measurements in a row means you're lost
         if badMeas > maxBadMeas && initLoc == 1
             localized = 0;
-            disp('Lost myself');
+            if badMeas == maxBadMeas + 1
+            disp('Lost myself initially');
             distTurned = 0;
+            else
+                disp('still lost');
+            end
         end
         guessCol = 'r';
         
@@ -426,60 +439,60 @@ while toc < maxTime
     end
     
     
-   %% PLANNING STUFF - KEVIN's CODE GOES HERE
-   if planOn ~= 0
-   currLoc = X;
-   
-   if (wpOrWall == 1) || (wpOrWall == 2)
-        [path pathDist relocalize removeIdx wpOrWall] = planPath(walls,optWalls,wpOrWall,currLoc,unvisitedWPs,visitedWPs );
-        if (relocalize == 1)
-            continue
+    %% PLANNING STUFF - KEVIN's CODE GOES HERE
+    if planOn ~= 0
+        currLoc = X;
+        
+        if (wpOrWall == 1) || (wpOrWall == 2)
+            [path pathDist relocalize removeIdx wpOrWall] = planPath(walls,optWalls,wpOrWall,currLoc,unvisitedWPs,visitedWPs );
+            if (relocalize == 1)
+                continue
+            end
+            if (isnan(path))
+                continue
+            end
+            if (wpOrWall == 1)
+                wpOrWall = 3;
+            elseif (wpOrWall == 2)
+                wpOrWall = 4;
+            end
+            waypoints = path(2:end,2:3);
+            m = size(waypoints, 1);
+            gotopt = 1;
+            dontMove = 0;
         end
-        if (isnan(path))
-            continue
-        end
-        if (wpOrWall == 1)
-            wpOrWall = 3;
-        elseif (wpOrWall == 2)
-            wpOrWall = 4;
-        end
-        waypoints = path(2:end,2:3);
-        m = size(waypoints, 1);
-        gotopt = 1;
-        dontMove = 0;
     end
-   end
     %% Draw stuff
-    if isLab == 1
-    figure(1);
-    end
-     
+    
+        figure(10);
+    hold on
+    
     col = 'k';
-
-    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3))); hold on
-
+    
+    PFGuess = quiver(X_PF(1),X_PF(2),cos(X_PF(3)),sin(X_PF(3))); 
+    
     guess = quiver(X(1),X(2),cos(X(3)),sin(X(3)));
-   % parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
-%   set(muGuess,'color','k');
+    % parts = quiver(X_out(1,:),X_out(2,:),w_out.*cos(X_out(3,:)),w_out.*sin(X_out(3,:)));
+    %   set(muGuess,'color','k');
     set(guess,'color',guessCol);
     set(PFGuess,'color','b');
     
-    if isLab == 1
+    %if isLab == 1
         xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
         robot = circle(X_true(1:2),sonarR,10);
         truth = quiver(X_true(1),X_true(2),cos(X_true(3)),sin(X_true(3)));
-        set(truth,'color','g');
-    end
-
-   
+        set(truth,'color','y');
+    %end
+    
+    
     %disp(sig);
     drawnow;
+    hold off
     
-
     
     %% store stuff
-   
-  
+    
+    
     if isempty(ARs)
         ARs = 0;
     end
@@ -502,96 +515,55 @@ while toc < maxTime
     beaconSize = size(dataStore.beacon,1);
     %
     dataStore.particles = [dataStore.particles; X_out;w_out];
-%    dataStore.pfvar = [dataStore.pfvar;X_var];
+    %    dataStore.pfvar = [dataStore.pfvar;X_var];
     dataStore.X = [dataStore.X;X'];
     dataStore.mu = [dataStore.mu;mu'];
     dataStore.sig = [dataStore.sig;sig];
     
-
+    
     
     
     %% CONTROL FUNCTION (send robot commands)
-%     if i == iMaxLoc %or confident of location TODO
-%         SetFwdVelAngVelCreate(CreatePort, 0, 0);
-%         delete(parts);
-%         delete(guess);
-%         break;
-%     else
-%IF you hit a wall, set bumped flag to 1
-if max(dataStore.bump(end,2:end)) == 1
-    bumped = 1;
-    if dataStore.bump(end,2) == 1
-        bumpSide = -pi/2;
-    elseif dataStore.bump(end,3) == 1
-        bumpSide = pi/2;
-    else
-        bumpSide = 0;
+    %     if i == iMaxLoc %or confident of location TODO
+    %         SetFwdVelAngVelCreate(CreatePort, 0, 0);
+    %         delete(parts);
+    %         delete(guess);
+    %         break;
+    %     else
+    %IF you hit a wall, set bumped flag to 1
+    if max(dataStore.bump(end,2:end)) == 1
+        bumped = 1;
+        if dataStore.bump(end,2) == 1
+            bumpSide = -pi/2;
+        elseif dataStore.bump(end,3) == 1
+            bumpSide = pi/2;
+        else
+            bumpSide = 0;
+        end
+        disp('hit a wall')
     end
-    disp('hit a wall')
-end
-if localized == 0
-    % LOCALIZATION CODE - BEN'sSTUFF
-    %turn until you see a beacon
-    if isempty(beacon) && distTurned < 2*pi && bumped == 0
-    cmdV = 0;
-    cmdW = slowV/wheel2center;
-    
-    
-    disp('unlocalized and cannot see a beacon - disturned < 2pi');
-    elseif isempty(beacon) && distTurned >2*pi && bumped == 0
-        %move randomly?
-        cmdV = 4 * slowV;
-        cmdW = 0;
-        disp ('unlocalized, turned in circle and still cannot see beacon disturned > 2pi');
-    elseif ~isempty(beacon)
-        distTurned = 0;
-        cmdV = 0;
-        cmdW = 0;
-        disp('Unolocalized but can see a beacon');
-        bumped = 0;
-    elseif bumped > 0 && isempty(beacon)
-        disp('unlocalized responding to bump. cant see a beacon.');
-        if bumped < 4
-            cmdV = -slowV;
-            cmdW = 0;
-            bumped = bumped + 1;
-        elseif bumped >= 4 && bumped < 7
+    if localized == 0
+        % LOCALIZATION CODE - BEN'sSTUFF
+        %turn until you see a beacon
+        if isempty(beacon) && distTurned < 2*pi && bumped == 0
             cmdV = 0;
-            if bumpSide == -pi/2 %turn to the left if bump is on the right
-            cmdW = slowV/2;
-            else
-                cmdW = -slowV;
-            end
-            bumped = bumped + 1;
-        elseif bumped >= 7
+            cmdW = slowV/wheel2center;
+            
+            
+            disp('unlocalized and cannot see a beacon - disturned < 2pi');
+        elseif isempty(beacon) && distTurned >2*pi && bumped == 0
+            %move randomly?
+            cmdV = 4 * slowV;
+            cmdW = 0;
+            disp ('unlocalized, turned in circle and still cannot see beacon disturned > 2pi');
+        elseif ~isempty(beacon)
+            distTurned = 0;
+            cmdV = 0;
+            cmdW = 0;
+            disp('Unolocalized but can see a beacon');
             bumped = 0;
-            cmdV  = 4 * slowV;
-            cmdW = 0;
-        end
-        
-    end
-    
-    
-elseif localized == 1
-    if planOn == 0
-        %do backup bump
-        if max(dataStore.bump(end,2:end)) == 1
-            bumped = 1;
-            if dataStore.bump(end,2) == 1
-                bumpSide = -pi/2;
-            elseif dataStore.bump(end,3) == 1
-                bumpSide = pi/2;
-            else
-                bumpSide = 0;
-            end
-            disp('hit a wall')
-        end
-        if bumped == 0
-            cmdV = 2*slowV;
-            cmdW = 0;
-            disp('moving while localized');
-        elseif bumped > 0
-            disp('responding to bump while localized');
+        elseif bumped > 0 && isempty(beacon)
+            disp('unlocalized responding to bump. cant see a beacon.');
             if bumped < 4
                 cmdV = -slowV;
                 cmdW = 0;
@@ -601,7 +573,7 @@ elseif localized == 1
                 if bumpSide == -pi/2 %turn to the left if bump is on the right
                     cmdW = slowV/2;
                 else
-                    cmdW = -slowV/2;
+                    cmdW = -slowV;
                 end
                 bumped = bumped + 1;
             elseif bumped >= 7
@@ -609,73 +581,116 @@ elseif localized == 1
                 cmdV  = 4 * slowV;
                 cmdW = 0;
             end
+            
         end
         
-    % CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
-    elseif planOn ~=0
-        if stop == 0
-            currPose = [toc;X]';
-            
-            if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
-     %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
-      cmdV = 0; cmdW = 0;
-                dontMove = 1;
-                walls = [walls; optWalls(removeIdx,:)];
-                optWalls(removeIdx,:) = [];
-                wpOrWall = 1;
-%             end
-%             elseif ((sum(dataStore.bump((end - 5):end,2)) > 3) || (sum(dataStore.bump((end - 5):end,3)) > 3) || (sum(dataStore.bump((end - 5):end,7)) > 3))
-                %% here we handle the case when the closest point goes through an optional wall
-                % 
-                %%
-            elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
-                if gotopt < m
-                    gotopt = gotopt + 1;
+        
+    elseif localized == 1
+        if planOn == 0
+            %do backup bump
+            if max(dataStore.bump(end,2:end)) == 1
+                bumped = 1;
+                if dataStore.bump(end,2) == 1
+                    bumpSide = -pi/2;
+                elseif dataStore.bump(end,3) == 1
+                    bumpSide = pi/2;
                 else
-                    %%
- %                   SetFwdVelAngVelCreate(CreatePort, 0,0 );
- cmdV = 0; cmdW = 0;
-                    if (wpOrWall == 3)
-                        visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
-                        unvisitedWPs(:,removeIdx) = [];
-                        wpOrWall = 1;
-                    elseif (wpOrWall == 4) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
-                        walls = [walls; optWalls(removeIdx,:)];
-                        optWalls(removeIdx,:) = []; 
-                        wpOrWall = 1;
-                    elseif (wpOrWall == 4)
-                        optWalls(removeIdx,:) = []; 
-                        wpOrWall = 1;
+                    bumpSide = 0;
+                end
+                disp('hit a wall')
+            end
+            if bumped == 0
+                cmdV = 2*slowV;
+                cmdW = 0;
+                disp('moving while localized');
+            elseif bumped > 0
+                disp('responding to bump while localized');
+                if bumped < 4
+                    cmdV = -slowV;
+                    cmdW = 0;
+                    bumped = bumped + 1;
+                elseif bumped >= 4 && bumped < 7
+                    cmdV = 0;
+                    if bumpSide == -pi/2 %turn to the left if bump is on the right
+                        cmdW = slowV/2;
+                    else
+                        cmdW = -slowV/2;
                     end
-%                     SetFwdVelAngVelCreate(CreatePort, 0,0 );
-                 
-                    dontMove = 1;
-                    %return
+                    bumped = bumped + 1;
+                elseif bumped >= 7
+                    bumped = 0;
+                    cmdV  = 4 * slowV;
+                    cmdW = 0;
                 end
             end
-            if (dontMove == 0 )
-            [velX, velW] = updateVW(waypoints, gotopt, currPose);
-            [cmdV,cmdW] = limitCmds(velX,velW,maxV,robotRad);
- %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+            
+            % CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
+        elseif planOn ~=0
+            if stop == 0
+                currPose = [toc;X]';
+                
+                if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                    %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                    cmdV = 0; cmdW = 0;
+                    dontMove = 1;
+                    walls = [walls; optWalls(removeIdx,:)];
+                    optWalls(removeIdx,:) = [];
+                    wpOrWall = 1;
+                    %             end
+                    %             elseif ((sum(dataStore.bump((end - 5):end,2)) > 3) || (sum(dataStore.bump((end - 5):end,3)) > 3) || (sum(dataStore.bump((end - 5):end,7)) > 3))
+                    %% here we handle the case when the closest point goes through an optional wall
+                    %
+                    %%
+                elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
+                    if gotopt < m
+                        gotopt = gotopt + 1;
+                    else
+                        %%
+                        %                   SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                        cmdV = 0; cmdW = 0;
+                        if (wpOrWall == 3)
+                            visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
+                            unvisitedWPs(:,removeIdx) = [];
+                            wpOrWall = 1;
+                        elseif (wpOrWall == 4) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                            walls = [walls; optWalls(removeIdx,:)];
+                            optWalls(removeIdx,:) = [];
+                            wpOrWall = 1;
+                        elseif (wpOrWall == 4)
+                            optWalls(removeIdx,:) = [];
+                            wpOrWall = 1;
+                        end
+                        %                     SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                        
+                        dontMove = 1;
+                        %return
+                    end
+                end
+                if (dontMove == 0 )
+                    [velX, velW] = updateVW(waypoints, gotopt, currPose);
+                    [cmdV,cmdW] = limitCmds(velX,velW,maxV,robotRad);
+                    %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+                end
             end
         end
-          if max(dataStore.bump(end,2:end)) == 1
-        %if you bump into a wall, back up
-        travelDist(CreatePort, slowV, -0.2);
-        turnAngle(CreatePort, slowV, 30);
-        disp('hit a wall');
-          end
     end
-end
- if noRobotCount >= 3
+    if noRobotCount >= 3
         SetFwdVelAngVelCreate(CreatePort, 0,0);
- else
-     SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
- end
+    else
+        [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
+        if abs(cmdW) > .1
+            cmdWNew = .1*(cmdW/abs(cmdW));
+            cmdVNew = cmdV*(cmdWNew/cmdW);
+            cmdW = cmdWNew;
+            cmdV = cmdVNew;
+        end
+        SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
+    end
+    t_cmd = toc;
     % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it
- 
+    
     
     pause(0.1);
     
