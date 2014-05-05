@@ -1,4 +1,4 @@
-function[dataStore] = masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = masterPlan2(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
 % relocalizeTest: test relocalization function  
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
@@ -90,7 +90,7 @@ if isLab == 1
 else
     load('ExampleMap2_2014.mat');
 end
-slowV = 0.05;
+slowV = 0.2;
 %TODO load covariance matrix
 maxBadMeas = 5; %max number of bad measurements before losing localization
 
@@ -217,7 +217,7 @@ while toc < maxTime
     %% READ & STORE SENSOR DATA
     t1 = toc; 
     
-    [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore);
+    [noRobotCount,truthPose,odometry,sonarData,bumpData,beaconData]=readStoreSensorData2(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount);
     t2 = toc;
   disp('reading data took'); disp(t2-t1);
     %% Loop Housekeeping
@@ -225,7 +225,7 @@ while toc < maxTime
     if i == 1
         %Test for localizing
         %     %REMOVE THIS
-%          X_0 = dataStore.truthPose(end,2:4)'*ones(1,M);
+%          X_0 = truthPose(end,2:4)'*ones(1,M);
 %          localized = 1;
 %        initLoc = 1;
         %change me
@@ -249,28 +249,28 @@ while toc < maxTime
         end
     end
     %% Condition data
-    u = dataStore.odometry(end,2:3)';
+    u = odometry(end,2:3)';
     
     %comment this out for real competition!
-    if size(dataStore.truthPose,2) == truthSize
+    if size(truthPose,2) == truthSize
         %if truthPose didn't update, update it yourself with odom data
-        newTrue = feval(g,dataStore.truthPose(end,2:4)',u);
-        dataStore.truthPose = [dataStore.truthPose;[toc, newTrue']];
+        newTrue = feval(g,truthPose(end,2:4)',u);
+        truthPose = [truthPose;[toc, newTrue']];
     else
-        truthSize = size(dataStore.truthPose,2);
+        truthSize = size(truthPose,2);
     end
-    X_true = dataStore.truthPose(end,2:4)';
+    X_true = truthPose(end,2:4)';
     
     %keep track of approximate distance turned
-    distTurned = distTurned + dataStore.odometry(end,3);
+    distTurned = distTurned + odometry(end,3);
     % get relevant data
-    [sonar,beacon, bump] = newData(dataStore,beaconSize);
-    beaconSize = beaconSize + length(beacon);
+    [sonar,beacon, bump] = newData(sonarData,beaconData,bumpData);
+    beaconSize = size(beaconData,2);
     
     %put data in comparable form
     [measurements, sonars, ARs ] = conditionSensors(sonar, beacon);
     %predict measurement
-    predictMeasTrue = hBeaconSonar(dataStore.truthPose(end,2:4),ARs,sonars,...
+    predictMeasTrue = hBeaconSonar(truthPose(end,2:4),ARs,sonars,...
         map,beaconLoc,cameraR,sonarR);
     
     
@@ -288,7 +288,7 @@ while toc < maxTime
     %prune the output
     if beaconSeen == 0 && i > 1
         %if you haven't switched resampling on, compound the weights
-        w_out = w_out.*dataStore.particles(end,:);
+        w_out = w_out.*particles(end,:);
     end
     X_PF = genGuess(X_out,w_out,initLoc);
     [locEventPF,predictMeasGuess,wallEventPF] = testConfidence(X_PF,measurements,h,sonars,ARs);
@@ -481,32 +481,12 @@ while toc < maxTime
     %% store stuff
     
     
-    if isempty(ARs)
-        ARs = 0;
-    end
-    if size(ARs,2)>5
-        warning('what?')
-    end
-    ARs = padarray(ARs,[0 5-size(ARs,2)],'post');
-    dataStore.ARs = [dataStore.ARs;ARs];
-    sonars = padarray(sonars, [0 3-size(sonars,2)],'post');
-    dataStore.sonars = [dataStore.sonars;sonars];
-    %TODO pad measurements with zeros so you can store it.
-    measurements = padarray(measurements, [0 13-size(measurements,2)],'post');
-    dataStore.measurements = [dataStore.measurements;measurements];
-    predictMeasTrue = padarray(predictMeasTrue, [0 13-size(predictMeasTrue,2)],'post');
-    dataStore.predictMeasTrue = [dataStore.predictMeasTrue; predictMeasTrue];
+   
+
+    particles = [X_out;w_out];
+    %    pfvar = [pfvar;X_var];
     
-    predictMeasGuess = padarray(predictMeasGuess, [0 13-size(predictMeasGuess,2)],'post');
-    dataStore.predictMeasGuess = [dataStore.predictMeasGuess; predictMeasGuess];
-    %make sure that beacon datastore keeps up with everybody else
-    beaconSize = size(dataStore.beacon,1);
-    %
-    dataStore.particles = [dataStore.particles; X_out;w_out];
-    %    dataStore.pfvar = [dataStore.pfvar;X_var];
-    dataStore.X = [dataStore.X;X'];
-    dataStore.mu = [dataStore.mu;mu'];
-    dataStore.sig = [dataStore.sig;sig];
+   
     
     
     
@@ -519,11 +499,11 @@ while toc < maxTime
     %         break;
     %     else
     %IF you hit a wall, set bumped flag to 1
-    if max(dataStore.bump(end,2:end)) == 1
+    if max(bump(end,2:end)) == 1
         bumped = 1;
-        if dataStore.bump(end,2) == 1
+        if bump(end,2) == 1
             bumpSide = -pi/2;
-        elseif dataStore.bump(end,3) == 1
+        elseif bump(end,3) == 1
             bumpSide = pi/2;
         else
             bumpSide = 0;
@@ -576,11 +556,11 @@ while toc < maxTime
     elseif localized == 1
         if planOn == 0
             %do backup bump
-            if max(dataStore.bump(end,2:end)) == 1
+            if max(bump(end,2:end)) == 1
                 bumped = 1;
-                if dataStore.bump(end,2) == 1
+                if bump(end,2) == 1
                     bumpSide = -pi/2;
-                elseif dataStore.bump(end,3) == 1
+                elseif bump(end,3) == 1
                     bumpSide = pi/2;
                 else
                     bumpSide = 0;
@@ -617,7 +597,7 @@ while toc < maxTime
             if stop == 0
                 currPose = [toc;X]';
                 
-                if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((bump(end,2) == 1) || (bump(end,3) == 1) || (bump(end,7) == 1))
                     %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
                     cmdV = 0; cmdW = 0;
                     dontMove = 1;
@@ -625,7 +605,7 @@ while toc < maxTime
                     optWalls(removeIdx,:) = [];
                     wpOrWall = 1;
                     %             end
-                    %             elseif ((sum(dataStore.bump((end - 5):end,2)) > 3) || (sum(dataStore.bump((end - 5):end,3)) > 3) || (sum(dataStore.bump((end - 5):end,7)) > 3))
+                    %             elseif ((sum(bump((end - 5):end,2)) > 3) || (sum(bump((end - 5):end,3)) > 3) || (sum(bump((end - 5):end,7)) > 3))
                     %% here we handle the case when the closest point goes through an optional wall
                     %
                     %%
@@ -640,7 +620,7 @@ while toc < maxTime
                             visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
                             unvisitedWPs(:,removeIdx) = [];
                             wpOrWall = 1;
-                        elseif (wpOrWall == 4) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                        elseif (wpOrWall == 4) && ((bump(end,2) == 1) || (bump(end,3) == 1) || (bump(end,7) == 1))
                             walls = [walls; optWalls(removeIdx,:)];
                             optWalls(removeIdx,:) = [];
                             wpOrWall = 1;
@@ -674,6 +654,7 @@ while toc < maxTime
     
     
     pause(0.1);
+    SetFwdVelAngVelCreate(CreatePort, 0,0 );
     
 end
 
@@ -683,15 +664,15 @@ SetFwdVelAngVelCreate(CreatePort, 0,0 );
 
 end
 
-function [sonar,beacon, bump] = newData(dataStore,beaconSize)
+function [sonar,beacon, bump] = newData(sonarData,beaconData,bumpData)
 %newData extracts the most recent data from the data structure, grabs new
 %beacon information 
-sonar = dataStore.sonar(end,2:4);
-bump = max(dataStore.bump(end,2:end));
+sonar = sonarData(end,2:4);
+bump = max(bumpData(end,2:end));
 beacon = [];
-if size(dataStore.beacon,1) ~= beaconSize
-numBeacons = size(dataStore.beacon,1)-beaconSize;
-beacon = dataStore.beacon(end-numBeacons+1:end,2:end);
+if ~isempty(beaconData)
+numBeacons = size(beaconData,2);
+beacon = beaconData(:,2:end);
 end
 
     function [cmdV,cmdW,done] = backupBump(turnDist, moveDist)

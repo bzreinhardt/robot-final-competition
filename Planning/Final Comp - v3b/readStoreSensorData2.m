@@ -1,4 +1,4 @@
-function [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,dataStore,BeaconMode)
+function [noRobotCount,truthPose,odometry,sonar,bump,beacon]=readStoreSensorData2(CreatePort,SonarPort,BeaconPort,tagNum,noRobotCount,BeaconMode)
 % This function tries to read all the sensor information from the Create
 % and store it in a data structure
 %
@@ -24,7 +24,7 @@ function [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,Beaco
 
 % If optional input 'BeaconMode' was not provided.  Assign default value
 if nargin<7, BeaconMode = 1; end
-t1 = toc;
+
     % read truth pose (from overhead localization system)
     try
         [px, py, pt] = OverheadLocalizationCreate(tagNum);
@@ -33,29 +33,22 @@ t1 = toc;
             noRobotCount = noRobotCount + 1;
         else
             poseX = px; poseY = py; poseTheta = pt;
-            dataStore.truthPose = [dataStore.truthPose ; ...
+            truthPose = [
                                toc poseX poseY poseTheta];
             noRobotCount = 0;
         end
     catch
         disp('Error retrieving or saving overhead localization data.');
     end
-    t2 = toc;
-  disp('truthpose took');disp(t2-t1);
+    
     % read odometry distance & angle
-    t1 = toc;
     try
         deltaD = DistanceSensorRoomba(CreatePort);
         deltaA = AngleSensorRoomba(CreatePort);
-        dataStore.odometry = [dataStore.odometry ; ...
-                              toc deltaD deltaA];
+        odometry = [toc deltaD deltaA];
     catch
         disp('Error retrieving or saving odometry data.');
     end
-    t2 = toc;
-  disp('odom took');disp(t2-t1);
-  
-    
     
 %     % read lidar data
 %     try
@@ -71,20 +64,16 @@ t1 = toc;
 %     end
 %     
     % read bump data
-    t1 = toc;
     try
         [BumpRight BumpLeft DropRight DropLeft DropCaster BumpFront] = ...
             BumpsWheelDropsSensorsRoomba(CreatePort);
-        dataStore.bump = [dataStore.bump ; toc ...
+        bump = [toc ...
             BumpRight BumpLeft DropRight DropLeft DropCaster BumpFront];
     catch
         disp('Error retrieving or saving bump sensor data.');
     end
-    t2 = toc;
-  disp('bump took');disp(t2-t1);
     
     % read sonar data
-    t1 = toc;
     try
         if isa(SonarPort,'CreateRobot')
             % Read sonar data from Simulator
@@ -101,14 +90,12 @@ t1 = toc;
             sonar = ReadSonar(SonarPort,[1,2,3]);
             sonarR = sonar(1); sonarF = sonar(2); sonarL = sonar(3);
         end
-        dataStore.sonar = [dataStore.sonar ; toc sonarR sonarF sonarL];
+        sonar = [toc sonarR sonarF sonarL];
     catch
         disp('Error retrieving or saving sonar data.');
     end
-t2 = toc;
-  disp('sonar took');disp(t2-t1);
+
     % read camera data (beacons)
-    t1 = toc;
     try
         if isa(BeaconPort,'CreateRobot')
             switch BeaconMode
@@ -126,10 +113,9 @@ t2 = toc;
             beacons = ReadBeacon(BeaconPort);
         end
         if ~isempty(beacons)
-            dataStore.beacon = [dataStore.beacon ; repmat(toc,size(beacons,1),1) beacons];
+            beacon = [repmat(toc,size(beacons,1),1) beacons];
+        else beacon = [];
         end
     catch
         disp('Error retrieving or saving camera data.');
     end
-    t2 = toc;
-  disp('beacon took');disp(t2-t1);
