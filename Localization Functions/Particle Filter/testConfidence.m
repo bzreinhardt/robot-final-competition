@@ -20,12 +20,12 @@ sonarWeight = 0.01;
 errThreshold = 0.25;
 %threshold summed sonar error to trigger optional wall detection
 sonarMargin = 0.2;
-predictMeasGuess = feval(h,X,ARs,sonars)
+predictMeasGuess = feval(h,X,ARs,sonars);
 %difference of measurements at guessed position from true measurements (ie
 %if the guess predicted measurement is too high, err will be positive
-measErr = predictMeasGuess-measurements;
+measErr = predictMeasGuess-measurements
 sonarErr = measErr(1:numel(sonars));
-beaconErr = measErr(numel(sonars)+1:numel(sonars)+numel(ARs));
+beaconErr = measErr(numel(sonars)+1:numel(sonars)+numel(ARs))/(0.5*numel(ARs));
 sumErr = sum(abs([sonarWeight*sonarErr,beaconErr]));
 
 %default err = 0;

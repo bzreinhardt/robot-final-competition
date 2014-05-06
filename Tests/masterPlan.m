@@ -1,4 +1,4 @@
-function[dataStore] = masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime)
+function[dataStore] = masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime,mapFile)
 % relocalizeTest: test relocalization function  
 % Details: Load the map. Initialize PF to the possible waypoints. Drive in
 % a slow small circle until one of the points is clearly better than all of
@@ -43,6 +43,9 @@ elseif nargin < 5
     maxTime = 500;
 end
 
+warning off MATLAB:delaunayTriangulation:ConsConsSplitWarnId
+warning off MATLAB:delaunayTriangulation:DupPtsConsUpdatedWarnId
+
 % declare dataStore as a global variable so it can be accessed from the
 % workspace even if the program is stopped
 global dataStore;
@@ -59,37 +62,43 @@ dataStore = struct('odometry', [], ...
                    'ARs',[], 'sonars',[],'measurements',[],...
                    'predictMeasGuess',[],...
                    'particles',[],'pfvar',[],...
-                   'X',[],'mu',[],'sig',[]);
+                   'X',[],'mu',[],'sig',[],'walls',[],'wayPtsVisited',[]);
 
 
 % Variable used to keep track of whether the overhead localization "lost"
 % the robot (number of consecutive times the robot was not identified).
 % If the robot doesn't know where it is we want to stop it for
 % safety reasons.
-noRobotCount = 0;
+
 
 %% set up constraints
 % maxTime = 500;  % Max time to allow the program to run (s)
 %check whether you are in the lab or not 
 global isLab;
-global planOn;
-global locOn;
+
+planOn = 1;
+
 maxV = 0.3;     % Max allowable forward velocity with no angular 
 wheel2center = 0.13;  
 sonarR = 0.16;
 cameraR = 0;
 robotRad = sonarR;
 %tunable Parameters
-closeEnough = sonarR;
+closeEnough = 0.2;
 
 if isLab == 1
-    load('ExampleLabMap_2014_2.mat');
+    load(mapFile);
     cameraR = 0.13;
     sonarR = 0.15;
+    slowV = 0.1;
+    turnSpeed = 0.2;
 else
     load('ExampleMap2_2014.mat');
+    slowV = 0.05;
+    turnSpeed = 0.05;
 end
-slowV = 0.05;
+
+
 %TODO load covariance matrix
 maxBadMeas = 5; %max number of bad measurements before losing localization
 
@@ -98,17 +107,17 @@ mapLims = [min([map(:,1);map(:,3)]),min([map(:,2);map(:,4)]),...
     max([map(:,1);map(:,3)]),max([map(:,2);map(:,4)])];
 
 
-angles = [0:pi/10:(2*pi-pi/10)];
+angles = [0:pi/5:(2*pi-pi/5)];
 X_0 = initializePF(waypoints,angles);
 
 %number of particles
 M = size(X_0,2);
 
-Q_sonar_low = 2;
+Q_sonar_low = 0.5;
 Q_sonar_high = 2;
 Q_sonar = Q_sonar_low;
 cov_AR = 0.05;
-R = [0.001 0 0; 0 0.001 0; 0 0 0.5];
+R = [0.01 0 0; 0 0.01 0; 0 0 0.5];
 R_postInit = 0.01*eye(3);
 theta = 0.1;
 %rotM = [cos(theta) -sin(theta);sin(theta) cos(theta)];
@@ -216,11 +225,9 @@ while toc < maxTime
      end
     end
     %% READ & STORE SENSOR DATA
-    
-    disp('start reading data')
+
     [noRobotCount,dataStore]=readStoreSensorData(CreatePort,SonarPort,BeaconPort,tagNum,0,dataStore);
     
-    disp('read data');
     %% Loop Housekeeping
     i = i + 1;
     if i == 1
@@ -255,7 +262,7 @@ while toc < maxTime
     %% Condition data
     u = dataStore.odometry(end,2:3)';
     
-    %comment this out for real competition!
+%comment this out for real competition!
 %     if size(dataStore.truthPose,2) == truthSize
 %         %if truthPose didn't update, update it yourself with odom data
 %         newTrue = feval(g,dataStore.truthPose(end,2:4)',u);
@@ -330,6 +337,8 @@ while toc < maxTime
             % if there is a systeming error in the sonars, there might be
             % an optional wall, - distrust the sonar sensors more
             Q_sonar = Q_sonar_high;
+            checkWall = hOptWall(mu,ARs,sonars,map,beaconLoc,cameraR,...
+                sonarR,optWalls,@hBeaconSonar,measurements,predictMeasGuess)
         elseif wallEvent == 0 && Q_sonar == Q_sonar_high
             % if no wall but Q_sonar is still high, reset sonar
             Q_sonar = Q_sonar_low;
@@ -347,8 +356,7 @@ while toc < maxTime
 %             %a missing wall will screw up the EKF, so if you suspect a wall
 %             %go completely on odometry
 %             
-%             checkWall = hOptWall(mu,ARs,sonars,map,beaconLoc,cameraR,...
-%                 sonarR,optWalls,@hBeaconSonar,measurements,predictMeasGuess)
+%             
 %            
 %            
 %             if checkWall > 0
@@ -370,10 +378,12 @@ while toc < maxTime
         if wayPtAlert == 1
             %do stuff - replan, beep etc
             disp('WAYPOINT!');
-            figure(10);
+            figure(10); hold on;
             plot(wayPtsVisited(end,1),wayPtsVisited(end,2),'gx');
+            hold off;
             wayPtAlert = 0;
-            if isLab
+            dataStore.wayPtsVisited = wayPtsVisited;
+            if isLab == 1
                 BeepRoomba(CreatePort);
             end
         end
@@ -433,7 +443,7 @@ while toc < maxTime
         guessCol = 'r';
         
     else
-        goodMeas = goodMeas + 1
+        goodMeas = goodMeas + 1;
         badMeas = 0;
         if initLoc == 1
         lastGoodX = X;
@@ -519,7 +529,9 @@ while toc < maxTime
     dataStore.X = [dataStore.X;X'];
     dataStore.mu = [dataStore.mu;mu'];
     dataStore.sig = [dataStore.sig;sig];
-    
+    if size(dataStore.walls,2) ~= size(walls);
+    dataStore.walls = walls;
+    end
     
     
     
@@ -614,7 +626,7 @@ while toc < maxTime
                 end
             end
             
-            % CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
+            %% CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
         elseif planOn ~=0
               
         currLoc = X;
@@ -637,24 +649,24 @@ while toc < maxTime
             gotopt = 1;
             dontMove = 0;
         end
-   
-    
-            if stop == 0
-                currPose = [toc;X]';
-                
-                if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
-                    %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
-                    cmdV = 0; cmdW = 0;
-                    dontMove = 1;
-                    walls = [walls; optWalls(removeIdx,:)];
-                    optWalls(removeIdx,:) = [];
-                    wpOrWall = 1;
-                    %             end
-                    %             elseif ((sum(dataStore.bump((end - 5):end,2)) > 3) || (sum(dataStore.bump((end - 5):end,3)) > 3) || (sum(dataStore.bump((end - 5):end,7)) > 3))
-                    %% here we handle the case when the closest point goes through an optional wall
-                    %
-                    %%
-             elseif ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+        
+        
+        if stop == 0
+            currPose = [toc;X]';
+            
+            if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                cmdV = 0; cmdW = 0;
+                dontMove = 1;
+                walls = [walls; optWalls(removeIdx,:)];
+                optWalls(removeIdx,:) = [];
+                wpOrWall = 1;
+                %             end
+                %             elseif ((sum(dataStore.bump((end - 5):end,2)) > 3) || (sum(dataStore.bump((end - 5):end,3)) > 3) || (sum(dataStore.bump((end - 5):end,7)) > 3))
+                %% here we handle the case when the closest point goes through an optional wall
+                %
+                %%
+            elseif ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
                 %% here we handle the case when the closest point goes through an optional wall
                 bumped = 0;
                 if (gotopt == 1)
@@ -681,73 +693,73 @@ while toc < maxTime
                         walls = [walls; optWalls(isectIdx,:)];
                         optWalls(isectIdx,:) = [];
                         wpOrWall = 1;
-                    end 
+                    end
                 else
                     
                     if bumped < 4
-                    cmdV = -slowV;
-                    cmdW = 0;
-                    bumped = bumped + 1;
-                elseif bumped >= 4 && bumped < 7
-                    cmdV = 0;
-                    if bumpSide == -pi/2 %turn to the left if bump is on the right
-                        cmdW = slowV/2;
-                    else
-                        cmdW = -slowV/2;
-                    end
-                    bumped = bumped + 1;
-                elseif bumped >= 7
-                    bumped = 0;
-                    cmdV  = 4 * slowV;
-                    cmdW = 0;
-                end
-                end
-                elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
-                    if gotopt < m
-                        gotopt = gotopt + 1;
-                    else
-                        %%
-                        %                   SetFwdVelAngVelCreate(CreatePort, 0,0 );
-                        cmdV = 0; cmdW = 0;
-                        if (wpOrWall == 3)
-                            visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
-                            unvisitedWPs(:,removeIdx) = [];
-                            wpOrWall = 1;
-                        elseif (wpOrWall == 4) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
-                            walls = [walls; optWalls(removeIdx,:)];
-                            optWalls(removeIdx,:) = [];
-                            wpOrWall = 1;
-                        elseif (wpOrWall == 4)
-                            optWalls(removeIdx,:) = [];
-                            wpOrWall = 1;
+                        cmdV = -slowV;
+                        cmdW = 0;
+                        bumped = bumped + 1;
+                    elseif bumped >= 4 && bumped < 7
+                        cmdV = 0;
+                        if bumpSide == -pi/2 %turn to the left if bump is on the right
+                            cmdW = slowV/2;
+                        else
+                            cmdW = -slowV/2;
                         end
-                        %                     SetFwdVelAngVelCreate(CreatePort, 0,0 );
-                        
-                        dontMove = 1;
-                        %return
+                        bumped = bumped + 1;
+                    elseif bumped >= 7
+                        bumped = 0;
+                        cmdV  = 4 * slowV;
+                        cmdW = 0;
                     end
                 end
-                if (dontMove == 0 )
-                    [velX, velW] = updateVW(waypoints, gotopt, currPose);
-                    [cmdV,cmdW] = limitCmds(velX,velW,maxV,robotRad);
-                    %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+            elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
+                if gotopt < m
+                    gotopt = gotopt + 1;
+                else
+                    %%
+                    %                   SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                    cmdV = 0; cmdW = 0;
+                    if (wpOrWall == 3)
+                        visitedWPs = [visitedWPs unvisitedWPs(:,removeIdx)];
+                        unvisitedWPs(:,removeIdx) = [];
+                        wpOrWall = 1;
+                    elseif (wpOrWall == 4) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
+                        walls = [walls; optWalls(removeIdx,:)];
+                        optWalls(removeIdx,:) = [];
+                        wpOrWall = 1;
+                    elseif (wpOrWall == 4)
+                        optWalls(removeIdx,:) = [];
+                        wpOrWall = 1;
+                    end
+                    %                     SetFwdVelAngVelCreate(CreatePort, 0,0 );
+                    
+                    dontMove = 1;
+                    %return
                 end
             end
+            if (dontMove == 0 )
+                [velX, velW] = updateVW(waypoints, gotopt, currPose);
+                [cmdV,cmdW] = limitCmds(velX,velW,maxV,robotRad);
+                %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
+            end
+        end
         end
     end
     
-   
-        [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
-        if abs(cmdW) > 0.4
-            cmdWNew = 0.4*(cmdW/abs(cmdW));
-            cmdVNew = cmdV*(cmdWNew/cmdW);
-            cmdW = cmdWNew;
-            cmdV = cmdVNew;
-        end
-       
-        SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
     
-    t_cmd = toc;
+    [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
+    if abs(cmdW) > turnSpeed
+        cmdWNew = turnSpeed*(cmdW/abs(cmdW));
+        cmdVNew = cmdV*(cmdWNew/cmdW);
+        cmdW = cmdWNew;
+        cmdV = cmdVNew;
+    end
+    
+    SetFwdVelAngVelCreate(CreatePort,cmdV,cmdW);
+  t_cmd = toc;
+
     % move forward if not bumped
     
     % if overhead localization loses the robot for too long, stop it

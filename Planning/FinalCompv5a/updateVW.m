@@ -17,5 +17,5 @@ theta = currPose(end,4);
 xDist = waypointX - currX;
 yDist = waypointY - currY;
 distance = sqrt((xDist*xDist) + (yDist*yDist));
-epsilon = 0.2;
+epsilon = 0;
 [VelX,VelW] = feedbackLin(xDist, yDist, theta, epsilon);

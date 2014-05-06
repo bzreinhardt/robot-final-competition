@@ -1,0 +1,10 @@
+function finalMap(dataStore, mapFile)
+%final map plots the known walls, the robots trajectory and visited
+%waypoints
+
+map = dataStore.walls;
+optWalls = [];
+wallVisualizer(map, optWalls, beaconLoc, waypoints, ECwaypoints); hold on
+
+xlim([mapLims(1),mapLims(3)]);ylim([mapLims(2),mapLims(4)]);
+end

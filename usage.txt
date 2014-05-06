@@ -1,0 +1,18 @@
+Usage:
+
+% type:
+global isLab;
+islab = 1;
+
+% this initializes a global varialble called isLab that lets a number of functions know to execute as if they were in the lab rather than the simulator
+
+make sure that the .mat file with the map information is on the path and set the variable mapFile
+mapFile = *string of the map information file name*
+
+call masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime,mapFile)
+
+it will store all data in the global struct dataStore
+
+At the end, to plot everything in figure 11 call
+
+finalMap(dataStore, mapFile) where dataStore and mapFile are the variables you already declared. 
