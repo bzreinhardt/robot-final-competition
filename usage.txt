@@ -9,6 +9,8 @@ islab = 1;
 make sure that the .mat file with the map information is on the path and set the variable mapFile
 mapFile = *string of the map information file name*
 
+please add entire folder to the path
+
 call masterPlan(CreatePort,SonarPort,BeaconPort,tagNum,maxTime,mapFile)
 
 it will store all data in the global struct dataStore

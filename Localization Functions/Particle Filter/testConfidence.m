@@ -23,9 +23,9 @@ sonarMargin = 0.2;
 predictMeasGuess = feval(h,X,ARs,sonars);
 %difference of measurements at guessed position from true measurements (ie
 %if the guess predicted measurement is too high, err will be positive
-measErr = predictMeasGuess-measurements
+measErr = predictMeasGuess-measurements;
 sonarErr = measErr(1:numel(sonars));
-beaconErr = measErr(numel(sonars)+1:numel(sonars)+numel(ARs))/(0.5*numel(ARs));
+beaconErr = measErr(numel(sonars)+1:numel(sonars)+numel(ARs))/(numel(ARs));
 sumErr = sum(abs([sonarWeight*sonarErr,beaconErr]));
 
 %default err = 0;

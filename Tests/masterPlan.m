@@ -181,7 +181,7 @@ hold off
 
 
 %% PLANNING INITIALIZATION KEVIN's STUFF GOES HERE %%
-if planOn ~= 0
+
 if isLab == 1
     maxV = 0.1;
 else
@@ -208,7 +208,6 @@ closeEnough = 0.2;
 gotopt = 1;
 stop = 0;
 dontMove = 0;
-end
 
 %% Main loop
 while toc < maxTime
@@ -296,7 +295,7 @@ while toc < maxTime
         else
             bumpSide = 0;
         end
-        disp('hit a wall')
+        disp('hit a wall at angle '); disp(bumpSide);
     end
     
     
@@ -349,6 +348,8 @@ while toc < maxTime
         elseif bumped ~= 1
             dt = t_cmd-t_odom;
             X = propigate(mu,cmdW,cmdV,dt,g);
+        elseif bumped ~= 1 && wallEvent == 2
+            X = propigate(X_PF,cmdW,cmdV,dt,g);
         elseif bumped == 1
             X = X_PF;
         end
@@ -555,7 +556,7 @@ while toc < maxTime
             disp('unlocalized and cannot see a beacon - disturned < 2pi');
         elseif isempty(beacon) && distTurned >2*pi && bumped == 0
             %move randomly?
-            cmdV = 4 * slowV;
+            cmdV = slowV;
             cmdW = 0;
             disp ('unlocalized, turned in circle and still cannot see beacon disturned > 2pi');
         elseif ~isempty(beacon)
@@ -588,47 +589,11 @@ while toc < maxTime
         
         
     elseif localized == 1
-        if planOn == 0
-            %do backup bump
-            if max(dataStore.bump(end,2:end)) == 1
-                bumped = 1;
-                if dataStore.bump(end,2) == 1
-                    bumpSide = -pi/2;
-                elseif dataStore.bump(end,3) == 1
-                    bumpSide = pi/2;
-                else
-                    bumpSide = 0;
-                end
-                disp('hit a wall')
-            end
-            if bumped == 0
-                cmdV = 2*slowV;
-                cmdW = 0;
-                disp('moving while localized');
-            elseif bumped > 0
-                disp('responding to bump while localized');
-                if bumped < 4
-                    cmdV = -slowV;
-                    cmdW = 0;
-                    bumped = bumped + 1;
-                elseif bumped >= 4 && bumped < 7
-                    cmdV = 0;
-                    if bumpSide == -pi/2 %turn to the left if bump is on the right
-                        cmdW = slowV/2;
-                    else
-                        cmdW = -slowV/2;
-                    end
-                    bumped = bumped + 1;
-                elseif bumped >= 7
-                    bumped = 0;
-                    cmdV  = 4 * slowV;
-                    cmdW = 0;
-                end
-            end
-            
-            %% CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
-        elseif planOn ~=0
-              
+        
+        
+        %% CODE ASSUMING YOU KNOW WHERE YOU ARE - KEVIN's STUFF GOES HERE
+   
+        
         currLoc = X;
         
         if (wpOrWall == 1) || (wpOrWall == 2)
@@ -656,7 +621,7 @@ while toc < maxTime
             
             if (wpOrWall == 4) && ((gotopt == m) || (gotopt == (m - 1))) && ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
                 %           SetFwdVelAngVelCreate(CreatePort, 0,0 );
-                cmdV = 0; cmdW = 0;
+                %               cmdV = 0; cmdW = 0;
                 dontMove = 1;
                 walls = [walls; optWalls(removeIdx,:)];
                 optWalls(removeIdx,:) = [];
@@ -668,7 +633,7 @@ while toc < maxTime
                 %%
             elseif ((dataStore.bump(end,2) == 1) || (dataStore.bump(end,3) == 1) || (dataStore.bump(end,7) == 1))
                 %% here we handle the case when the closest point goes through an optional wall
-                bumped = 0;
+                
                 if (gotopt == 1)
                 elseif (size(optWalls,1) >= 1)
                     isectIdx = 0;
@@ -696,23 +661,7 @@ while toc < maxTime
                     end
                 else
                     
-                    if bumped < 4
-                        cmdV = -slowV;
-                        cmdW = 0;
-                        bumped = bumped + 1;
-                    elseif bumped >= 4 && bumped < 7
-                        cmdV = 0;
-                        if bumpSide == -pi/2 %turn to the left if bump is on the right
-                            cmdW = slowV/2;
-                        else
-                            cmdW = -slowV/2;
-                        end
-                        bumped = bumped + 1;
-                    elseif bumped >= 7
-                        bumped = 0;
-                        cmdV  = 4 * slowV;
-                        cmdW = 0;
-                    end
+                   
                 end
             elseif (abs(currPose(end,2) - waypoints(gotopt,1)) < closeEnough ) && (abs(currPose(end,3) - waypoints(gotopt,2)) < closeEnough)
                 if gotopt < m
@@ -745,8 +694,33 @@ while toc < maxTime
                 %           SetFwdVelAngVelCreate(CreatePort, cmdV, cmdW );
             end
         end
-        end
     end
+
+if bumped > 0
+    disp('localized but bumped something')
+    if bumped < 4
+        disp('backing away from wall')
+        cmdV = -slowV;
+        cmdW = 0;
+        bumped = bumped + 1;
+    elseif bumped >= 4 && bumped < 7
+        cmdV = 0;
+        if bumpSide == -pi/2 %turn to the left if bump is on the right
+            disp('turning left away from wall');
+            cmdW = turnSpeed/2;
+        else
+            disp('turning right away from wall');
+            cmdW = -turnSpeed/2;
+        end
+        bumped = bumped + 1;
+    elseif bumped >= 7
+        bumped = 0;
+        cmdV  = slowV;
+        cmdW = 0;
+    end
+end
+
+ 
     
     
     [cmdV,cmdW] = limitCmds(cmdV,cmdW,slowV,robotRad);
@@ -771,9 +745,9 @@ end
 
 % set forward and angular velocity to zero (stop robot) before exiting the function
 SetFwdVelAngVelCreate(CreatePort, 0,0 );
-
-
 end
+
+
 
 function [sonar,beacon, bump] = newData(dataStore,beaconSize)
 %newData extracts the most recent data from the data structure, grabs new
